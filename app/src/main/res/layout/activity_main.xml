@@ -37,6 +37,54 @@
             android:text="启动连接服务"
             android:textSize="20sp" />
 
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="音频连接方式"
+            android:textColor="@color/text"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <CheckBox
+            android:id="@+id/usbEnabledCheck"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:checked="true"
+            android:text="启用 Type-C（优先）"
+            android:textSize="18sp" />
+
+        <CheckBox
+            android:id="@+id/bluetoothEnabledCheck"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:text="启用蓝牙通话设备"
+            android:textSize="18sp" />
+
+        <Button
+            android:id="@+id/selectBluetoothButton"
+            android:layout_width="match_parent"
+            android:layout_height="60dp"
+            android:text="选择蓝牙设备"
+            android:textSize="18sp" />
+
+        <TextView
+            android:id="@+id/selectedBluetoothText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="尚未选择蓝牙设备"
+            android:textColor="@color/muted"
+            android:textSize="16sp" />
+
+        <Button
+            android:id="@+id/openBluetoothSettingsButton"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="8dp"
+            android:text="打开系统蓝牙设置"
+            android:textSize="17sp" />
+
         <Button
             android:id="@+id/testDoubaoButton"
             android:layout_width="match_parent"

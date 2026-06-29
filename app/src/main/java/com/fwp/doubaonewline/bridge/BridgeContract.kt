@@ -11,6 +11,9 @@ object BridgeContract {
     const val PREFS = "bridge_preferences"
     const val PREF_ENABLED = "service_enabled"
     const val PREF_DOUBAO_URI = "doubao_conversation_uri"
+    const val PREF_USB_ENABLED = "usb_audio_enabled"
+    const val PREF_BLUETOOTH_ENABLED = "bluetooth_audio_enabled"
+    const val PREF_BLUETOOTH_DEVICE = "bluetooth_audio_device"
 
     const val DOUBAO_PACKAGE = "com.larus.nova"
 }

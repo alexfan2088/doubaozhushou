@@ -18,14 +18,16 @@ import com.fwp.doubaonewline.automation.DoubaoAccessibilityService
 class NewlineBridgeService : Service() {
 
     private lateinit var audioMonitor: AudioDeviceMonitor
+    private lateinit var audioRouteManager: AudioRouteManager
     private var doubaoStartedForConnection = false
-    private var usbAudioWasReady = false
+    private var activeRoute = AudioRouteManager.Kind.NONE
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, notification("等待连接 Newline"))
 
+        audioRouteManager = AudioRouteManager(this)
         audioMonitor = AudioDeviceMonitor(this, ::handleAudioSnapshot)
         audioMonitor.start()
     }
@@ -33,9 +35,7 @@ class NewlineBridgeService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             BridgeContract.ACTION_USB_DETACHED -> {
-                usbAudioWasReady = false
-                doubaoStartedForConnection = false
-                publish("设备已断开", usbDetails())
+                inspectCurrentState()
             }
             else -> inspectCurrentState()
         }
@@ -44,6 +44,7 @@ class NewlineBridgeService : Service() {
 
     override fun onDestroy() {
         audioMonitor.stop()
+        audioRouteManager.clear()
         super.onDestroy()
     }
 
@@ -55,35 +56,38 @@ class NewlineBridgeService : Service() {
     }
 
     private fun handleAudioSnapshot(snapshot: AudioDeviceMonitor.Snapshot) {
-        val usbManager = getSystemService(UsbManager::class.java)
-        val usbDevices = usbManager.deviceList.values
-        if (usbDevices.isEmpty()) {
-            endDoubaoCallIfNeeded()
-            doubaoStartedForConnection = false
-            publish("等待连接 Newline", "当前未发现 USB 设备")
-            return
-        }
+        val usbDevices = getSystemService(UsbManager::class.java).deviceList.values
+        val selection = audioRouteManager.select(snapshot)
         val details = buildString {
-            appendLine("USB：")
-            usbDevices.forEach {
-                appendLine(
-                    "${it.productName ?: it.deviceName} " +
-                        "VID=${it.vendorId} PID=${it.productId} class=${it.deviceClass}"
-                )
+            if (usbDevices.isNotEmpty()) {
+                appendLine("USB：")
+                usbDevices.forEach {
+                    appendLine(
+                        "${it.productName ?: it.deviceName} " +
+                            "VID=${it.vendorId} PID=${it.productId} class=${it.deviceClass}"
+                    )
+                }
             }
             appendLine("USB 音频输入：${snapshot.usbInputs.ifEmpty { listOf("未发现") }.joinToString()}")
-            append("USB 音频输出：${snapshot.usbOutputs.ifEmpty { listOf("未发现") }.joinToString()}")
+            appendLine("USB 音频输出：${snapshot.usbOutputs.ifEmpty { listOf("未发现") }.joinToString()}")
+            appendLine("当前路由：${selection.label}")
+            append("系统路由请求：${if (selection.routeAccepted) "已接受" else "使用系统默认"}")
         }
 
-        if (!snapshot.ready) {
-            endDoubaoCallIfNeeded()
+        if (selection.kind == AudioRouteManager.Kind.NONE) {
+            activeRoute = AudioRouteManager.Kind.NONE
             doubaoStartedForConnection = false
-            publish("已连接，等待音频设备", details)
+            publish("等待双向音频设备", details)
             return
         }
 
-        usbAudioWasReady = true
-        publish("Newline 音频已就绪", details)
+        activeRoute = selection.kind
+        val routeName = when (selection.kind) {
+            AudioRouteManager.Kind.USB -> "Type-C 音频已就绪"
+            AudioRouteManager.Kind.BLUETOOTH -> "蓝牙通话音频已就绪"
+            AudioRouteManager.Kind.NONE -> "等待音频设备"
+        }
+        publish(routeName, details)
         if (!doubaoStartedForConnection) {
             doubaoStartedForConnection = true
             DoubaoAccessibilityService.requestCallStart()
@@ -95,12 +99,6 @@ class NewlineBridgeService : Service() {
                     publish("豆包启动失败", "$details\n原因：${it.message}")
                 }
         }
-    }
-
-    private fun endDoubaoCallIfNeeded() {
-        if (!usbAudioWasReady) return
-        usbAudioWasReady = false
-        Log.i(TAG, "USB audio disappeared; call hangup disabled in stable start-only mode")
     }
 
     private fun publish(status: String, detail: String) {
