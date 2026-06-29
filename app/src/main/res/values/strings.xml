@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">豆包 Newline 助手</string>
+    <string name="service_channel_name">设备连接服务</string>
+    <string name="service_channel_description">监听 Newline 设备并启动豆包连续对话</string>
+    <string name="accessibility_description">仅在豆包内查找并点击电话图标，进入实时语音通话。</string>
+</resources>
