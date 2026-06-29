@@ -33,7 +33,6 @@ class NewlineBridgeService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             BridgeContract.ACTION_USB_DETACHED -> {
-                DoubaoAccessibilityService.requestHangup()
                 usbAudioWasReady = false
                 doubaoStartedForConnection = false
                 publish("设备已断开", usbDetails())
@@ -101,8 +100,7 @@ class NewlineBridgeService : Service() {
     private fun endDoubaoCallIfNeeded() {
         if (!usbAudioWasReady) return
         usbAudioWasReady = false
-        DoubaoAccessibilityService.requestHangup()
-        Log.i(TAG, "USB audio disappeared; requested call end and return home")
+        Log.i(TAG, "USB audio disappeared; call hangup disabled in stable start-only mode")
     }
 
     private fun publish(status: String, detail: String) {

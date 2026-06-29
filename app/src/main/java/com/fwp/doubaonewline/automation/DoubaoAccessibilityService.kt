@@ -25,9 +25,6 @@ import com.fwp.doubaonewline.bridge.BridgeContract
 class DoubaoAccessibilityService : AccessibilityService() {
 
     private var lastClickAt = 0L
-    private var callStartRequested = false
-    private var realtimeCallObserved = false
-    private var hangupInProgress = false
     private val handler = Handler(Looper.getMainLooper())
     private var hangupReceiverRegistered = false
 
@@ -42,7 +39,6 @@ class DoubaoAccessibilityService : AccessibilityService() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        callStartRequested = pendingCallStart
     }
 
     override fun onServiceConnected() {
@@ -61,10 +57,6 @@ class DoubaoAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.packageName?.toString() != DOUBAO_PACKAGE) return
-        if (event.className?.toString()?.contains(REALTIME_CALL_ACTIVITY) == true) {
-            realtimeCallObserved = true
-        }
-        if (!callStartRequested) return
         val now = SystemClock.elapsedRealtime()
         if (now - lastClickAt < CLICK_COOLDOWN_MS) return
 
@@ -76,9 +68,6 @@ class DoubaoAccessibilityService : AccessibilityService() {
 
         if (clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
             lastClickAt = now
-            callStartRequested = false
-            pendingCallStart = false
-            realtimeCallObserved = true
             Log.i(TAG, "Clicked Doubao voice entry: ${match.label}")
         }
     }
@@ -101,7 +90,6 @@ class DoubaoAccessibilityService : AccessibilityService() {
         val target = root?.let(::findHangupTarget)
         val clickable = target?.let { findClickableAncestor(it.node) }
         if (clickable?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true) {
-            completeHangup()
             Log.i(TAG, "Clicked Doubao hangup control: ${target.label}")
             return
         }
@@ -110,12 +98,7 @@ class DoubaoAccessibilityService : AccessibilityService() {
                 { attemptHangup(retriesRemaining - 1) },
                 HANGUP_RETRY_MS
             )
-        } else if (!realtimeCallObserved) {
-            hangupInProgress = false
-            performGlobalAction(GLOBAL_ACTION_HOME)
-            Log.i(TAG, "Realtime call was not observed; returned home without coordinate click")
         } else if (!dispatchHangupGesture()) {
-            hangupInProgress = false
             Log.w(TAG, "Doubao hangup control was not found and gesture failed")
         }
     }
@@ -142,27 +125,16 @@ class DoubaoAccessibilityService : AccessibilityService() {
             gesture,
             object : GestureResultCallback() {
                 override fun onCompleted(gestureDescription: GestureDescription?) {
-                    completeHangup()
+                    handler.removeCallbacksAndMessages(null)
                     Log.i(TAG, "Clicked Doubao hangup by gesture at ($x, $y)")
                 }
 
                 override fun onCancelled(gestureDescription: GestureDescription?) {
-                    hangupInProgress = false
                     Log.w(TAG, "Doubao hangup gesture was cancelled")
                 }
             },
             null
         )
-    }
-
-    private fun completeHangup() {
-        handler.removeCallbacksAndMessages(null)
-        realtimeCallObserved = false
-        handler.postDelayed({
-            performGlobalAction(GLOBAL_ACTION_HOME)
-            hangupInProgress = false
-            Log.i(TAG, "Returned to home after ending Doubao realtime call")
-        }, RETURN_HOME_DELAY_MS)
     }
 
     private fun findHangupTarget(root: AccessibilityNodeInfo): Match? {
@@ -216,10 +188,8 @@ class DoubaoAccessibilityService : AccessibilityService() {
     companion object {
         private const val TAG = "DoubaoAutomation"
         private const val DOUBAO_PACKAGE = "com.larus.nova"
-        private const val REALTIME_CALL_ACTIVITY = "RealtimeCallActivity"
         private const val CLICK_COOLDOWN_MS = 10_000L
         private const val HANGUP_RETRY_MS = 500L
-        private const val RETURN_HOME_DELAY_MS = 400L
         // Derived from the inspected 1080x2400 layout: X center [825,2000]-[1035,2210].
         private const val HANGUP_X_RATIO = 0.861f
         private const val HANGUP_Y_RATIO = 0.877f
@@ -241,29 +211,19 @@ class DoubaoAccessibilityService : AccessibilityService() {
         @Volatile
         private var instance: DoubaoAccessibilityService? = null
 
-        @Volatile
-        private var pendingCallStart = false
-
         fun requestHangup() {
             val service = instance
-            pendingCallStart = false
             if (service == null) {
                 Log.w(TAG, "Accessibility service is not connected; cannot hang up")
                 return
             }
-            service.callStartRequested = false
-            if (service.hangupInProgress) return
-            service.hangupInProgress = true
             service.handler.removeCallbacksAndMessages(null)
             service.attemptHangup(retriesRemaining = 1)
         }
 
         fun requestCallStart() {
-            pendingCallStart = true
             instance?.apply {
-                callStartRequested = true
                 lastClickAt = 0L
-                hangupInProgress = false
             }
             Log.i(TAG, "Doubao realtime call start requested")
         }
