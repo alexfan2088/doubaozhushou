@@ -1,6 +1,11 @@
 package com.fwp.doubaonewline.bridge
 
 import android.Manifest
+import android.bluetooth.BluetoothA2dp
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothHeadset
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothProfile
 import android.content.Context
 import android.content.pm.PackageManager
 import android.media.AudioDeviceInfo
@@ -13,8 +18,8 @@ class AudioRouteManager(private val context: Context) {
 
     data class BluetoothCandidate(
         val key: String,
-        val name: String,
-        val device: AudioDeviceInfo
+        val displayLabel: String,
+        val device: AudioDeviceInfo?
     )
 
     data class Selection(
@@ -24,7 +29,18 @@ class AudioRouteManager(private val context: Context) {
     )
 
     private val audioManager = context.getSystemService(AudioManager::class.java)
+    private val bluetoothManager = context.getSystemService(BluetoothManager::class.java)
     private val prefs = context.getSharedPreferences(BridgeContract.PREFS, Context.MODE_PRIVATE)
+    private val bluetoothSelectionStore = BluetoothSelectionStore(context)
+    @Volatile
+    private var headsetProxy: BluetoothHeadset? = null
+    @Volatile
+    private var a2dpProxy: BluetoothA2dp? = null
+
+    init {
+        requestProfileProxy(BluetoothProfile.HEADSET) { headsetProxy = it as? BluetoothHeadset }
+        requestProfileProxy(BluetoothProfile.A2DP) { a2dpProxy = it as? BluetoothA2dp }
+    }
 
     fun select(snapshot: AudioDeviceMonitor.Snapshot): Selection {
         val usbEnabled = prefs.getBoolean(BridgeContract.PREF_USB_ENABLED, true)
@@ -36,10 +52,10 @@ class AudioRouteManager(private val context: Context) {
         }
 
         if (bluetoothEnabled && hasBluetoothPermission()) {
-            val selectedKey = prefs.getString(BridgeContract.PREF_BLUETOOTH_DEVICE, null)
+            val selectedKey = selectedBluetoothKey()
             val candidate = bluetoothCandidates().firstOrNull { it.key == selectedKey }
             if (candidate != null) {
-                return activate(candidate.device, Kind.BLUETOOTH, candidate.name)
+                return activate(candidate.device, Kind.BLUETOOTH, candidate.displayLabel)
             }
         }
 
@@ -49,20 +65,44 @@ class AudioRouteManager(private val context: Context) {
 
     fun bluetoothCandidates(): List<BluetoothCandidate> {
         if (!hasBluetoothPermission()) return emptyList()
-        return availableCommunicationDevices()
+        val pairedDevices = pairedBluetoothDevices()
+        if (pairedDevices.isEmpty()) return emptyList()
+
+        // Some OEMs only publish the HFP/SCO endpoint while communication mode is active.
+        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+        val audioDevices = availableCommunicationDevices()
             .filter(::isBluetoothCommunication)
-            .distinctBy(::stableKey)
-            .map {
+        val connectedAddresses = connectedBluetoothAddresses()
+
+        return pairedDevices
+            .sortedWith(
+                compareByDescending<BluetoothDevice> { it.address.lowercase() in connectedAddresses }
+                    .thenBy { it.name.orEmpty().lowercase() }
+                    .thenBy { it.address.lowercase() }
+            )
+            .map { bluetoothDevice ->
+                val audioDevice = audioDevices.firstOrNull {
+                    representsSameDevice(it, bluetoothDevice)
+                }
                 BluetoothCandidate(
-                    key = stableKey(it),
-                    name = it.productName?.toString()?.ifBlank { "蓝牙通话设备" }
-                        ?: "蓝牙通话设备",
-                    device = it
+                    key = stableKey(bluetoothDevice),
+                    displayLabel = buildDisplayLabel(
+                        bluetoothDevice,
+                        bluetoothDevice.address.lowercase() in connectedAddresses
+                    ),
+                    device = audioDevice
                 )
             }
+            .distinctBy { it.key }
     }
 
     fun saveBluetoothCandidate(candidate: BluetoothCandidate) {
+        bluetoothSelectionStore.save(
+            BluetoothSelectionStore.Record(
+                key = candidate.key,
+                displayLabel = candidate.displayLabel
+            )
+        )
         prefs.edit()
             .putString(BridgeContract.PREF_BLUETOOTH_DEVICE, candidate.key)
             .putBoolean(BridgeContract.PREF_BLUETOOTH_ENABLED, true)
@@ -70,11 +110,31 @@ class AudioRouteManager(private val context: Context) {
     }
 
     fun selectedBluetoothKey(): String? =
-        prefs.getString(BridgeContract.PREF_BLUETOOTH_DEVICE, null)
+        bluetoothSelectionStore.load()?.key
+            ?: prefs.getString(BridgeContract.PREF_BLUETOOTH_DEVICE, null)?.also { legacyKey ->
+                bluetoothSelectionStore.save(
+                    BluetoothSelectionStore.Record(
+                        key = legacyKey,
+                        displayLabel = legacyKey.substringAfter('|').ifBlank {
+                            legacyKey.substringBefore('|').ifBlank { legacyKey }
+                        }
+                    )
+                )
+            }
+
+    fun selectedBluetoothConnected(): Boolean {
+        val key = selectedBluetoothKey() ?: return false
+        val address = key.substringBefore('|').trim().lowercase()
+        return address.isNotEmpty() && address in connectedBluetoothAddresses()
+    }
 
     fun selectedBluetoothName(): String? {
+        val record = bluetoothSelectionStore.load()
         val key = selectedBluetoothKey() ?: return null
-        return key.substringAfterLast('|').ifBlank { null }
+        val candidate = bluetoothCandidates().firstOrNull { it.key == key }
+        return candidate?.displayLabel
+            ?: record?.displayLabel
+            ?: key.substringAfterLast('|').ifBlank { null }
     }
 
     fun clear() {
@@ -112,8 +172,67 @@ class AudioRouteManager(private val context: Context) {
         device.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
             device.type == AudioDeviceInfo.TYPE_BLE_HEADSET
 
+    private fun pairedBluetoothDevices(): Set<BluetoothDevice> =
+        runCatching { bluetoothManager.adapter?.bondedDevices.orEmpty() }
+            .getOrDefault(emptySet())
+
+    private fun connectedBluetoothDevices(): List<BluetoothDevice> =
+        buildList {
+            addAll(runCatching { headsetProxy?.connectedDevices.orEmpty() }.getOrDefault(emptyList()))
+            addAll(runCatching { a2dpProxy?.connectedDevices.orEmpty() }.getOrDefault(emptyList()))
+        }.distinctBy { it.address.lowercase() }
+
+    private fun connectedBluetoothAddresses(): Set<String> =
+        connectedBluetoothDevices().map { it.address.lowercase() }.toSet()
+
+    private fun buildDisplayLabel(device: BluetoothDevice, isConnected: Boolean): String {
+        val name = device.name?.ifBlank { null } ?: device.address
+        val status = if (isConnected) "已连接" else "已配对"
+        return "$name（$status）"
+    }
+
+    private fun requestProfileProxy(
+        profile: Int,
+        onConnected: (BluetoothProfile?) -> Unit
+    ) {
+        bluetoothManager.adapter?.getProfileProxy(
+            context,
+            object : BluetoothProfile.ServiceListener {
+                override fun onServiceConnected(profileId: Int, proxy: BluetoothProfile) {
+                    if (profileId == profile) onConnected(proxy)
+                }
+
+                override fun onServiceDisconnected(profileId: Int) {
+                    if (profileId == profile) onConnected(null)
+                }
+            },
+            profile
+        )
+    }
+
+    private fun representsSameDevice(
+        audioDevice: AudioDeviceInfo,
+        bluetoothDevice: BluetoothDevice
+    ): Boolean {
+        val audioAddress = audioDevice.address.trim()
+        if (audioAddress.isNotEmpty() &&
+            audioAddress.equals(bluetoothDevice.address, ignoreCase = true)
+        ) {
+            return true
+        }
+
+        val audioName = audioDevice.productName?.toString()?.trim().orEmpty()
+        val bluetoothName = bluetoothDevice.name?.trim().orEmpty()
+        return audioName.isNotEmpty() &&
+            bluetoothName.isNotEmpty() &&
+            audioName.equals(bluetoothName, ignoreCase = true)
+    }
+
     private fun deviceIdentity(device: AudioDeviceInfo): String =
         "${device.type}|${device.address}|${device.productName}"
 
     private fun stableKey(device: AudioDeviceInfo): String = deviceIdentity(device)
+
+    private fun stableKey(device: BluetoothDevice): String =
+        "${device.address.lowercase()}|${device.name.orEmpty()}"
 }

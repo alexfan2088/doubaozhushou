@@ -2,15 +2,23 @@ package com.fwp.doubaonewline
 
 import android.Manifest
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
 import android.widget.CheckBox
 import android.widget.Button
+import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -19,7 +27,6 @@ import androidx.core.content.ContextCompat
 import com.fwp.doubaonewline.automation.DoubaoAccessibilityService
 import com.fwp.doubaonewline.bridge.BridgeContract
 import com.fwp.doubaonewline.bridge.AudioRouteManager
-import com.fwp.doubaonewline.bridge.DoubaoLauncher
 import com.fwp.doubaonewline.bridge.NewlineBridgeService
 
 class MainActivity : AppCompatActivity() {
@@ -27,6 +34,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var detailText: TextView
     private lateinit var selectedBluetoothText: TextView
+    private lateinit var accessibilityStatusText: TextView
     private lateinit var audioRouteManager: AudioRouteManager
     private var receiverRegistered = false
     private var pendingBluetoothSelection = false
@@ -46,31 +54,15 @@ class MainActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         detailText = findViewById(R.id.detailText)
         selectedBluetoothText = findViewById(R.id.selectedBluetoothText)
+        accessibilityStatusText = findViewById(R.id.accessibilityStatusText)
         audioRouteManager = AudioRouteManager(this)
         setupAudioSettings()
 
-        findViewById<Button>(R.id.startButton).setOnClickListener {
-            enableAndStartService()
-        }
-        findViewById<Button>(R.id.testDoubaoButton).setOnClickListener {
-            DoubaoAccessibilityService.requestCallStart()
-            DoubaoLauncher(this).launch()
-                .onSuccess { statusText.text = "豆包已启动" }
-                .onFailure {
-                    statusText.text = "豆包启动失败"
-                    detailText.text = it.message
-                }
-        }
-        findViewById<Button>(R.id.accessibilityButton).setOnClickListener {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            statusText.text = "请找到“豆包连续对话自动启动”并开启"
-            detailText.text = "该权限仅用于在豆包内点击电话图标，进入实时语音通话。只需开启一次。"
-        }
         findViewById<Button>(R.id.selectBluetoothButton).setOnClickListener {
             chooseBluetoothDevice()
         }
-        findViewById<Button>(R.id.openBluetoothSettingsButton).setOnClickListener {
-            startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+        findViewById<LinearLayout>(R.id.accessibilitySettingRow).setOnClickListener {
+            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
 
         if (hasNotificationPermission()) {
@@ -96,6 +88,11 @@ class MainActivity : AppCompatActivity() {
         if (hasNotificationPermission()) {
             startServiceSafely()
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        updateAccessibilityStatus()
     }
 
     override fun onStop() {
@@ -169,7 +166,7 @@ class MainActivity : AppCompatActivity() {
 
         usbCheck.isChecked = prefs.getBoolean(BridgeContract.PREF_USB_ENABLED, true)
         bluetoothCheck.isChecked =
-            prefs.getBoolean(BridgeContract.PREF_BLUETOOTH_ENABLED, false)
+            prefs.getBoolean(BridgeContract.PREF_BLUETOOTH_ENABLED, true)
 
         usbCheck.setOnCheckedChangeListener { _, checked ->
             prefs.edit().putBoolean(BridgeContract.PREF_USB_ENABLED, checked).apply()
@@ -195,20 +192,24 @@ class MainActivity : AppCompatActivity() {
         val candidates = audioRouteManager.bluetoothCandidates()
         if (candidates.isEmpty()) {
             AlertDialog.Builder(this)
-                .setTitle("没有可用的双向蓝牙设备")
+                .setTitle("没有可列出的蓝牙设备")
                 .setMessage(
-                    "请先在系统蓝牙设置中连接支持通话麦克风和扬声器的设备。" +
-                        "仅支持音乐播放的 A2DP 音箱不会显示。"
+                    "请先在系统蓝牙设置中配对至少一个设备。" +
+                        "列表会显示所有已配对设备，并标出当前是否已连接。"
                 )
-                .setPositiveButton("打开蓝牙设置") { _, _ ->
-                    startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
-                }
-                .setNegativeButton("取消", null)
+                .setPositiveButton("知道了", null)
                 .show()
             return
         }
 
-        val names = candidates.map { it.name }.toTypedArray()
+        val selectedKey = audioRouteManager.selectedBluetoothKey()
+        val names = candidates.map { candidate ->
+            if (candidate.key == selectedKey) {
+                selectedBluetoothListLabel(candidate.displayLabel)
+            } else {
+                candidate.displayLabel
+            }
+        }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle("选择蓝牙通话设备")
             .setItems(names) { _, index ->
@@ -221,10 +222,53 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun selectedBluetoothListLabel(deviceLabel: String): CharSequence {
+        val selectedText = "  已选择"
+        return SpannableString(deviceLabel + selectedText).apply {
+            setSpan(
+                ForegroundColorSpan(Color.rgb(21, 101, 192)),
+                0,
+                deviceLabel.length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+            setSpan(
+                StyleSpan(Typeface.BOLD),
+                0,
+                deviceLabel.length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+            setSpan(
+                ForegroundColorSpan(Color.rgb(211, 47, 47)),
+                deviceLabel.length,
+                length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
+    }
+
     private fun updateSelectedBluetoothText() {
         selectedBluetoothText.text = audioRouteManager.selectedBluetoothName()?.let {
             "已选择：$it"
         } ?: "尚未选择蓝牙设备"
+    }
+
+    private fun updateAccessibilityStatus() {
+        val component = ComponentName(this, DoubaoAccessibilityService::class.java)
+        val enabledServices = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ).orEmpty()
+        val enabled = enabledServices.split(':').any {
+            it.equals(component.flattenToString(), ignoreCase = true) ||
+                it.equals(component.flattenToShortString(), ignoreCase = true)
+        }
+        accessibilityStatusText.text = if (enabled) "已开启" else "未开启 · 点击设置"
+        accessibilityStatusText.setTextColor(
+            ContextCompat.getColor(
+                this,
+                if (enabled) R.color.success else R.color.warning
+            )
+        )
     }
 
     private fun requestBluetoothPermission(selectAfterGrant: Boolean) {

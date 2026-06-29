@@ -5,12 +5,20 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothHeadset
+import android.bluetooth.BluetoothA2dp
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.hardware.usb.UsbManager
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.fwp.doubaonewline.MainActivity
 import com.fwp.doubaonewline.R
 import com.fwp.doubaonewline.automation.DoubaoAccessibilityService
@@ -19,8 +27,21 @@ class NewlineBridgeService : Service() {
 
     private lateinit var audioMonitor: AudioDeviceMonitor
     private lateinit var audioRouteManager: AudioRouteManager
-    private var doubaoStartedForConnection = false
-    private var activeRoute = AudioRouteManager.Kind.NONE
+    private var launchedRouteKey: String? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private var connectionReceiverRegistered = false
+    private val connectionReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            Log.i(TAG, "Connection event: ${intent?.action}")
+            scheduleInspections()
+        }
+    }
+    private val periodicInspection = object : Runnable {
+        override fun run() {
+            inspectCurrentState()
+            handler.postDelayed(this, INSPECTION_INTERVAL_MS)
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -29,7 +50,9 @@ class NewlineBridgeService : Service() {
 
         audioRouteManager = AudioRouteManager(this)
         audioMonitor = AudioDeviceMonitor(this, ::handleAudioSnapshot)
+        registerConnectionReceiver()
         audioMonitor.start()
+        handler.post(periodicInspection)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -43,6 +66,11 @@ class NewlineBridgeService : Service() {
     }
 
     override fun onDestroy() {
+        handler.removeCallbacksAndMessages(null)
+        if (connectionReceiverRegistered) {
+            unregisterReceiver(connectionReceiver)
+            connectionReceiverRegistered = false
+        }
         audioMonitor.stop()
         audioRouteManager.clear()
         super.onDestroy()
@@ -55,9 +83,45 @@ class NewlineBridgeService : Service() {
         handleAudioSnapshot(snapshot)
     }
 
+    private fun registerConnectionReceiver() {
+        val filter = IntentFilter().apply {
+            addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
+            addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
+            addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+            addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+            addAction(BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED)
+            addAction(BluetoothA2dp.ACTION_CONNECTION_STATE_CHANGED)
+        }
+        ContextCompat.registerReceiver(
+            this,
+            connectionReceiver,
+            filter,
+            ContextCompat.RECEIVER_EXPORTED
+        )
+        connectionReceiverRegistered = true
+    }
+
+    private fun scheduleInspections() {
+        handler.post { inspectCurrentState() }
+        handler.postDelayed({ inspectCurrentState() }, 1_000L)
+        handler.postDelayed({ inspectCurrentState() }, 3_000L)
+    }
+
     private fun handleAudioSnapshot(snapshot: AudioDeviceMonitor.Snapshot) {
         val usbDevices = getSystemService(UsbManager::class.java).deviceList.values
         val selection = audioRouteManager.select(snapshot)
+        val selectedBluetoothConnected = audioRouteManager.selectedBluetoothConnected()
+        val routeKey = when (selection.kind) {
+            AudioRouteManager.Kind.USB -> "usb"
+            AudioRouteManager.Kind.BLUETOOTH -> {
+                if (selectedBluetoothConnected) {
+                    "bluetooth:${audioRouteManager.selectedBluetoothKey().orEmpty()}"
+                } else {
+                    null
+                }
+            }
+            AudioRouteManager.Kind.NONE -> null
+        }
         val details = buildString {
             if (usbDevices.isNotEmpty()) {
                 appendLine("USB：")
@@ -71,30 +135,33 @@ class NewlineBridgeService : Service() {
             appendLine("USB 音频输入：${snapshot.usbInputs.ifEmpty { listOf("未发现") }.joinToString()}")
             appendLine("USB 音频输出：${snapshot.usbOutputs.ifEmpty { listOf("未发现") }.joinToString()}")
             appendLine("当前路由：${selection.label}")
+            appendLine("蓝牙已连接：${if (selectedBluetoothConnected) "是" else "否"}")
             append("系统路由请求：${if (selection.routeAccepted) "已接受" else "使用系统默认"}")
         }
 
-        if (selection.kind == AudioRouteManager.Kind.NONE) {
-            activeRoute = AudioRouteManager.Kind.NONE
-            doubaoStartedForConnection = false
+        if (routeKey == null) {
+            launchedRouteKey = null
+            if (selection.kind == AudioRouteManager.Kind.BLUETOOTH && !selectedBluetoothConnected) {
+                publish("蓝牙设备已选中，等待连接", details)
+                return
+            }
             publish("等待双向音频设备", details)
             return
         }
 
-        activeRoute = selection.kind
         val routeName = when (selection.kind) {
             AudioRouteManager.Kind.USB -> "Type-C 音频已就绪"
             AudioRouteManager.Kind.BLUETOOTH -> "蓝牙通话音频已就绪"
             AudioRouteManager.Kind.NONE -> "等待音频设备"
         }
         publish(routeName, details)
-        if (!doubaoStartedForConnection) {
-            doubaoStartedForConnection = true
+        if (launchedRouteKey != routeKey) {
+            launchedRouteKey = routeKey
             DoubaoAccessibilityService.requestCallStart()
             DoubaoLauncher(this).launch()
                 .onSuccess { publish("豆包已启动，可以开始对话", details) }
                 .onFailure {
-                    doubaoStartedForConnection = false
+                    launchedRouteKey = null
                     Log.e(TAG, "Unable to launch Doubao", it)
                     publish("豆包启动失败", "$details\n原因：${it.message}")
                 }
@@ -153,6 +220,7 @@ class NewlineBridgeService : Service() {
         private const val TAG = "NewlineBridgeService"
         private const val CHANNEL_ID = "newline_bridge"
         private const val NOTIFICATION_ID = 1001
+        private const val INSPECTION_INTERVAL_MS = 2_000L
 
         fun start(context: Context, action: String = BridgeContract.ACTION_START) {
             val intent = Intent(context, NewlineBridgeService::class.java).setAction(action)

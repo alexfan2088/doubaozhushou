@@ -4,4 +4,6 @@
     <color name="surface">#FFFFFF</color>
     <color name="text">#101828</color>
     <color name="muted">#475467</color>
+    <color name="success">#16803C</color>
+    <color name="warning">#D92D20</color>
 </resources>
