@@ -25,7 +25,6 @@ import com.fwp.doubaonewline.bridge.BridgeContract
 class DoubaoAccessibilityService : AccessibilityService() {
 
     private var lastClickAt = 0L
-    private var callStartRequested = false
     private val handler = Handler(Looper.getMainLooper())
     private var hangupReceiverRegistered = false
 
@@ -40,7 +39,6 @@ class DoubaoAccessibilityService : AccessibilityService() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        callStartRequested = pendingCallStart
     }
 
     override fun onServiceConnected() {
@@ -60,7 +58,6 @@ class DoubaoAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.packageName?.toString() != DOUBAO_PACKAGE) return
         val now = SystemClock.elapsedRealtime()
-        if (!callStartRequested) return
         if (now - lastClickAt < CLICK_COOLDOWN_MS) return
 
         val root = rootInActiveWindow ?: return
@@ -71,8 +68,6 @@ class DoubaoAccessibilityService : AccessibilityService() {
 
         if (clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
             lastClickAt = now
-            callStartRequested = false
-            pendingCallStart = false
             Log.i(TAG, "Clicked Doubao voice entry: ${match.label}")
         }
     }
@@ -218,26 +213,19 @@ class DoubaoAccessibilityService : AccessibilityService() {
 
         fun requestHangup() {
             val service = instance
-            pendingCallStart = false
             if (service == null) {
                 Log.w(TAG, "Accessibility service is not connected; cannot hang up")
                 return
             }
-            service.callStartRequested = false
             service.handler.removeCallbacksAndMessages(null)
             service.attemptHangup(retriesRemaining = 1)
         }
 
-        @Volatile
-        private var pendingCallStart = false
-
         fun requestCallStart() {
-            pendingCallStart = true
             instance?.apply {
-                callStartRequested = true
                 lastClickAt = 0L
             }
-            Log.i(TAG, "Doubao realtime call start armed")
+            Log.i(TAG, "Doubao realtime call start requested")
         }
     }
 }
