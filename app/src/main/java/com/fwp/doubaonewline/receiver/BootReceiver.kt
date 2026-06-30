@@ -8,9 +8,10 @@ import com.fwp.doubaonewline.bridge.NewlineBridgeService
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
-        val enabled = context.getSharedPreferences(BridgeContract.PREFS, Context.MODE_PRIVATE)
-            .getBoolean(BridgeContract.PREF_ENABLED, false)
-        if (enabled) {
+        val prefs = context.getSharedPreferences(BridgeContract.PREFS, Context.MODE_PRIVATE)
+        val enabled = prefs.getBoolean(BridgeContract.PREF_ENABLED, false)
+        val mode = prefs.getString(BridgeContract.PREF_MODE, BridgeContract.MODE_V2)
+        if (enabled && mode == BridgeContract.MODE_V1) {
             runCatching { NewlineBridgeService.start(context) }
         }
     }

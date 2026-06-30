@@ -15,6 +15,9 @@ object BridgeContract {
     const val PREF_BLUETOOTH_ENABLED = "bluetooth_audio_enabled"
     const val PREF_BLUETOOTH_DEVICE = "bluetooth_audio_device"
     const val PREF_READY_GREETING = "ready_greeting"
+    const val PREF_MODE = "app_mode"
+    const val MODE_V1 = "v1"
+    const val MODE_V2 = "v2"
 
     const val DOUBAO_PACKAGE = "com.larus.nova"
     const val DEFAULT_READY_GREETING = "豆包豆包，你好啊"

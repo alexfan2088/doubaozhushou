@@ -215,7 +215,11 @@ class VolcengineRealtimeVoiceClient(
 
     private fun parseUsage(payload: String): RealtimeVoiceEvent.Usage? = runCatching {
         val root = JSONObject(payload)
-        val input = findLong(
+        val splitInput = findLong(root, setOf("input_audio_tokens")) +
+            findLong(root, setOf("input_text_tokens"))
+        val splitOutput = findLong(root, setOf("output_audio_tokens")) +
+            findLong(root, setOf("output_text_tokens"))
+        val genericInput = findLong(
             root,
             setOf(
                 "input_tokens",
@@ -225,7 +229,7 @@ class VolcengineRealtimeVoiceClient(
                 "text_input_tokens"
             )
         )
-        val output = findLong(
+        val genericOutput = findLong(
             root,
             setOf(
                 "output_tokens",
@@ -235,6 +239,8 @@ class VolcengineRealtimeVoiceClient(
                 "text_output_tokens"
             )
         )
+        val input = if (splitInput > 0L) splitInput else genericInput
+        val output = if (splitOutput > 0L) splitOutput else genericOutput
         val total = findLong(root, setOf("total_tokens", "total_token", "totaltokens"))
         when {
             input > 0L || output > 0L -> RealtimeVoiceEvent.Usage(input, output)

@@ -131,6 +131,7 @@ class MainActivity : AppCompatActivity() {
         getSharedPreferences(BridgeContract.PREFS, MODE_PRIVATE)
             .edit()
             .putBoolean(BridgeContract.PREF_ENABLED, true)
+            .putString(BridgeContract.PREF_MODE, BridgeContract.MODE_V1)
             .apply()
         startServiceSafely()
     }

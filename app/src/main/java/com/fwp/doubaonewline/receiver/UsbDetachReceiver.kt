@@ -8,6 +8,9 @@ import com.fwp.doubaonewline.bridge.NewlineBridgeService
 
 class UsbDetachReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
+        val mode = context.getSharedPreferences(BridgeContract.PREFS, Context.MODE_PRIVATE)
+            .getString(BridgeContract.PREF_MODE, BridgeContract.MODE_V2)
+        if (mode != BridgeContract.MODE_V1) return
         runCatching {
             NewlineBridgeService.start(context, BridgeContract.ACTION_USB_DETACHED)
         }

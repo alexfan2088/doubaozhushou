@@ -13,6 +13,7 @@ import android.hardware.usb.UsbManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
@@ -25,6 +26,7 @@ import com.fwp.doubaonewline.R
 import com.fwp.doubaonewline.automation.DoubaoAccessibilityService
 import com.fwp.doubaonewline.bridge.AudioDeviceMonitor
 import com.fwp.doubaonewline.bridge.AudioRouteManager
+import com.fwp.doubaonewline.bridge.BridgeContract
 import com.fwp.doubaonewline.bridge.NewlineBridgeService
 import java.text.NumberFormat
 import java.util.UUID
@@ -33,7 +35,6 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     private lateinit var statusText: TextView
     private lateinit var detailText: TextView
     private lateinit var welcomeInput: EditText
-    private lateinit var interruptButton: Button
     private lateinit var stopButton: Button
     private lateinit var totalTokensText: TextView
     private lateinit var todayTokensText: TextView
@@ -49,6 +50,9 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     private var startAfterPermission = false
     private var activeRouteKey: String? = null
     private var sessionTokens = 0L
+    private var sessionStartedAtMs: Long? = null
+    private var lastDurationCheckpointAtMs: Long? = null
+    private var finishedSessionDurationMs = 0L
     private var connectionReceiverRegistered = false
 
     private val connectionReceiver = object : BroadcastReceiver() {
@@ -61,6 +65,15 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         override fun run() {
             inspectAudioRoute()
             handler.postDelayed(this, ROUTE_CHECK_INTERVAL_MS)
+        }
+    }
+
+    private val durationUiTick = object : Runnable {
+        override fun run() {
+            checkpointDuration()
+            renderUsage(usageTracker.snapshot())
+            renderSessionTokens()
+            handler.postDelayed(this, DURATION_UI_INTERVAL_MS)
         }
     }
 
@@ -83,13 +96,17 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         statusText = findViewById(R.id.v2StatusText)
         detailText = findViewById(R.id.v2DetailText)
         welcomeInput = findViewById(R.id.v2WelcomeInput)
-        interruptButton = findViewById(R.id.v2InterruptButton)
         stopButton = findViewById(R.id.v2StopButton)
         totalTokensText = findViewById(R.id.v2TotalTokensText)
         todayTokensText = findViewById(R.id.v2TodayTokensText)
         sessionTokensText = findViewById(R.id.v2SessionTokensText)
         estimatedCostText = findViewById(R.id.v2EstimatedCostText)
 
+        getSharedPreferences(BridgeContract.PREFS, MODE_PRIVATE)
+            .edit()
+            .putBoolean(BridgeContract.PREF_ENABLED, false)
+            .putString(BridgeContract.PREF_MODE, BridgeContract.MODE_V2)
+            .apply()
         stopService(Intent(this, NewlineBridgeService::class.java))
         DoubaoAccessibilityService.cancelCallStart()
         client = VolcengineRealtimeVoiceClient(this)
@@ -101,11 +118,6 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         renderUsage(usageTracker.snapshot())
         renderSessionTokens()
 
-        interruptButton.setOnClickListener {
-            client.interrupt().onFailure {
-                showError("打断失败", it.message ?: it.javaClass.simpleName)
-            }
-        }
         stopButton.setOnClickListener { stopSession() }
         findViewById<Button>(R.id.switchToV1Button).setOnClickListener {
             stopSession()
@@ -115,6 +127,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         registerConnectionReceiver()
         audioMonitor.start()
         handler.post(periodicRouteCheck)
+        handler.post(durationUiTick)
     }
 
     private fun ensurePermissionAndStart() {
@@ -132,6 +145,9 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     private fun startSession() {
         if (activeRouteKey == null) return
         sessionTokens = 0L
+        sessionStartedAtMs = null
+        lastDurationCheckpointAtMs = null
+        finishedSessionDurationMs = 0L
         renderSessionTokens()
         setConnectingUi()
         coordinator.start { credentials ->
@@ -149,6 +165,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     }
 
     private fun stopSession() {
+        finishSessionDuration()
         coordinator.stop(DisconnectReason.USER_REQUEST)
         showIdleUi("会话已结束；请重新连接 Type-C 或蓝牙设备后自动开始。")
     }
@@ -173,6 +190,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
             val hadRoute = activeRouteKey != null
             activeRouteKey = null
             if (hadRoute && coordinator.state != RealtimeVoiceState.IDLE) {
+                finishSessionDuration()
                 coordinator.stop(DisconnectReason.AUDIO_DEVICE_LOST)
             }
             showWaitingForDevice()
@@ -181,6 +199,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
 
         if (routeKey != activeRouteKey) {
             if (coordinator.state != RealtimeVoiceState.IDLE) {
+                finishSessionDuration()
                 coordinator.stop(DisconnectReason.AUDIO_DEVICE_LOST)
             }
             activeRouteKey = routeKey
@@ -217,17 +236,24 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     override fun onEvent(event: RealtimeVoiceEvent) {
         runOnUiThread {
             when (event) {
-                RealtimeVoiceEvent.Connected ->
+                RealtimeVoiceEvent.Connected -> {
+                    if (sessionStartedAtMs == null) {
+                        val now = SystemClock.elapsedRealtime()
+                        sessionStartedAtMs = now
+                        lastDurationCheckpointAtMs = now
+                    }
                     showActiveUi("正在聆听", "V2 已连接，可以直接说话。")
+                }
                 RealtimeVoiceEvent.UserSpeechStarted ->
                     showActiveUi("正在听你说话", "检测到用户语音。")
                 RealtimeVoiceEvent.UserSpeechEnded ->
                     showActiveUi("正在思考", "语音输入结束，等待模型回答。")
                 RealtimeVoiceEvent.ModelResponseStarted ->
-                    showActiveUi("豆包正在回答", "可以点击“打断当前回答”。")
+                    showActiveUi("豆包正在回答", "直接开口即可打断当前回答。")
                 RealtimeVoiceEvent.ModelResponseEnded ->
                     showActiveUi("正在聆听", "回答结束，可以继续说话。")
                 is RealtimeVoiceEvent.Failure -> {
+                    finishSessionDuration()
                     coordinator.stop(DisconnectReason.SERVICE_ERROR)
                     showError("V2 服务错误", "${event.code}: ${event.message}")
                 }
@@ -246,35 +272,30 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     private fun setConnectingUi() {
         statusText.text = "正在连接 V2"
         detailText.text = "正在初始化端到端实时语音 SDK…"
-        interruptButton.isEnabled = false
         stopButton.isEnabled = true
     }
 
     private fun showActiveUi(status: String, detail: String) {
         statusText.text = status
         detailText.text = detail
-        interruptButton.isEnabled = true
         stopButton.isEnabled = true
     }
 
     private fun showIdleUi(detail: String) {
         statusText.text = "尚未连接"
         detailText.text = detail
-        interruptButton.isEnabled = false
         stopButton.isEnabled = false
     }
 
     private fun showError(status: String, detail: String) {
         statusText.text = status
         detailText.text = detail
-        interruptButton.isEnabled = false
         stopButton.isEnabled = coordinator.state != RealtimeVoiceState.IDLE
     }
 
     private fun showWaitingForDevice() {
         statusText.text = "等待设备连接"
         detailText.text = "连接 Type-C 或已选择的蓝牙通话设备后，将自动开始 V2 实时语音。"
-        interruptButton.isEnabled = false
         stopButton.isEnabled = false
     }
 
@@ -287,8 +308,13 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
 
     private fun renderUsage(snapshot: V2UsageSnapshot) {
         val formatter = NumberFormat.getIntegerInstance()
-        totalTokensText.text = "本机累计：${formatter.format(snapshot.totalTokens)} Token"
-        todayTokensText.text = "今日累计：${formatter.format(snapshot.todayTokens)} Token"
+        val activeDuration = uncheckpointedDurationMs()
+        totalTokensText.text =
+            "本机累计：${formatter.format(snapshot.totalTokens)} Token · " +
+                "${formatMinutes(snapshot.totalDurationMs + activeDuration)} 分钟"
+        todayTokensText.text =
+            "今日累计：${formatter.format(snapshot.todayTokens)} Token · " +
+                "${formatMinutes(snapshot.todayDurationMs + activeDuration)} 分钟"
         val price = BuildConfig.V2_PRICE_PER_MILLION_TOKENS
         estimatedCostText.text = if (price > 0.0) {
             val totalCost = snapshot.totalTokens * price / 1_000_000.0
@@ -301,7 +327,39 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
 
     private fun renderSessionTokens() {
         sessionTokensText.text =
-            "本轮对话：${NumberFormat.getIntegerInstance().format(sessionTokens)} Token"
+            "本轮对话：${NumberFormat.getIntegerInstance().format(sessionTokens)} Token · " +
+                "${formatMinutes(currentSessionDurationMs())} 分钟"
+    }
+
+    private fun currentSessionDurationMs(): Long =
+        sessionStartedAtMs?.let { startedAt ->
+            (SystemClock.elapsedRealtime() - startedAt).coerceAtLeast(0L)
+        } ?: finishedSessionDurationMs
+
+    private fun uncheckpointedDurationMs(): Long =
+        lastDurationCheckpointAtMs?.let { checkpoint ->
+            (SystemClock.elapsedRealtime() - checkpoint).coerceAtLeast(0L)
+        } ?: 0L
+
+    private fun checkpointDuration(force: Boolean = false) {
+        val checkpoint = lastDurationCheckpointAtMs ?: return
+        val now = SystemClock.elapsedRealtime()
+        val delta = (now - checkpoint).coerceAtLeast(0L)
+        if (!force && delta < DURATION_CHECKPOINT_INTERVAL_MS) return
+        if (delta > 0L) {
+            usageTracker.addDuration(delta)
+        }
+        lastDurationCheckpointAtMs = now
+    }
+
+    private fun finishSessionDuration() {
+        val duration = currentSessionDurationMs()
+        checkpointDuration(force = true)
+        finishedSessionDurationMs = duration
+        sessionStartedAtMs = null
+        lastDurationCheckpointAtMs = null
+        renderUsage(usageTracker.snapshot())
+        renderSessionTokens()
     }
 
     override fun onDestroy() {
@@ -317,6 +375,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
             audioRouteManager.clear()
         }
         if (::coordinator.isInitialized) {
+            finishSessionDuration()
             coordinator.stop(DisconnectReason.APP_SHUTDOWN)
         }
         if (::client.isInitialized) {
@@ -329,7 +388,12 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         private const val PREFS = "v2_voice"
         private const val KEY_USER_ID = "user_id"
         private const val ROUTE_CHECK_INTERVAL_MS = 2_000L
+        private const val DURATION_UI_INTERVAL_MS = 1_000L
+        private const val DURATION_CHECKPOINT_INTERVAL_MS = 5_000L
         private val PCM_16K_MONO = AudioFormatSpec(16_000, 1, 16, "pcm")
         private val PCM_24K_MONO = AudioFormatSpec(24_000, 1, 16, "pcm")
+
+        private fun formatMinutes(durationMs: Long): String =
+            "%.1f".format(durationMs / 60_000.0)
     }
 }

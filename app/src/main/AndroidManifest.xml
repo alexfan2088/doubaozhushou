@@ -30,10 +30,6 @@
 
         <activity
             android:name=".v2.V2Activity"
-            android:exported="false" />
-
-        <activity
-            android:name=".ModeSelectionActivity"
             android:exported="true"
             android:launchMode="singleTask">
             <intent-filter>
@@ -41,6 +37,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".ModeSelectionActivity"
+            android:exported="false" />
 
         <service
             android:name=".bridge.NewlineBridgeService"
