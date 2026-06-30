@@ -1,9 +1,12 @@
 package com.fwp.doubaonewline.v2
 
 import android.Manifest
+import android.app.Activity
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothA2dp
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothHeadset
+import android.bluetooth.BluetoothManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -18,6 +21,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.fwp.doubaonewline.BuildConfig
@@ -40,6 +44,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     private lateinit var todayTokensText: TextView
     private lateinit var sessionTokensText: TextView
     private lateinit var estimatedCostText: TextView
+    private lateinit var selectedBluetoothText: TextView
 
     private lateinit var client: VolcengineRealtimeVoiceClient
     private lateinit var coordinator: V2SessionCoordinator
@@ -54,6 +59,8 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     private var lastDurationCheckpointAtMs: Long? = null
     private var finishedSessionDurationMs = 0L
     private var connectionReceiverRegistered = false
+    private var pendingBluetoothSelection = false
+    private var userRequestedStop = false
 
     private val connectionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -77,6 +84,16 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         }
     }
 
+    private val reconnectSession = Runnable {
+        if (
+            !userRequestedStop &&
+            activeRouteKey != null &&
+            coordinator.state == RealtimeVoiceState.IDLE
+        ) {
+            startSession(resetSession = false, announceWelcome = false)
+        }
+    }
+
     private val microphonePermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -87,6 +104,26 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
             startAfterPermission = false
             showError("无法开始", "V2 实时语音需要麦克风权限。")
         }
+    }
+
+    private val bluetoothPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted && pendingBluetoothSelection) {
+            chooseBluetoothDevice()
+        } else if (!granted) {
+            showError("需要附近设备权限", "没有该权限无法选择蓝牙通话设备。")
+        }
+        pendingBluetoothSelection = false
+    }
+
+    private val enableBluetooth = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK && pendingBluetoothSelection) {
+            chooseBluetoothDevice()
+        }
+        pendingBluetoothSelection = false
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -101,6 +138,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         todayTokensText = findViewById(R.id.v2TodayTokensText)
         sessionTokensText = findViewById(R.id.v2SessionTokensText)
         estimatedCostText = findViewById(R.id.v2EstimatedCostText)
+        selectedBluetoothText = findViewById(R.id.v2SelectedBluetoothText)
 
         getSharedPreferences(BridgeContract.PREFS, MODE_PRIVATE)
             .edit()
@@ -117,7 +155,11 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         audioMonitor = AudioDeviceMonitor(this) { inspectAudioRoute() }
         renderUsage(usageTracker.snapshot())
         renderSessionTokens()
+        updateSelectedBluetoothText()
 
+        findViewById<Button>(R.id.v2SelectBluetoothButton).setOnClickListener {
+            chooseBluetoothDevice()
+        }
         stopButton.setOnClickListener { stopSession() }
         findViewById<Button>(R.id.switchToV1Button).setOnClickListener {
             stopSession()
@@ -142,12 +184,20 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         }
     }
 
-    private fun startSession() {
+    private fun startSession(
+        resetSession: Boolean = true,
+        announceWelcome: Boolean = true
+    ) {
         if (activeRouteKey == null) return
-        sessionTokens = 0L
-        sessionStartedAtMs = null
-        lastDurationCheckpointAtMs = null
-        finishedSessionDurationMs = 0L
+        userRequestedStop = false
+        V2VoiceForegroundService.start(this)
+        if (resetSession) {
+            sessionTokens = 0L
+            val startedAt = SystemClock.elapsedRealtime()
+            sessionStartedAtMs = startedAt
+            lastDurationCheckpointAtMs = startedAt
+            finishedSessionDurationMs = 0L
+        }
         renderSessionTokens()
         setConnectingUi()
         coordinator.start { credentials ->
@@ -155,18 +205,76 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
                 credentials = credentials,
                 userId = getOrCreateUserId(),
                 systemPrompt = "你是一个自然、简洁、有帮助的中文语音助手。",
-                welcomeText = welcomeInput.text.toString(),
+                welcomeText = if (announceWelcome) welcomeInput.text.toString() else "",
                 inputFormat = PCM_16K_MONO,
                 outputFormat = PCM_24K_MONO
             )
         }.onFailure {
+            finishSessionDuration()
             showError("V2 连接失败", it.message ?: it.javaClass.simpleName)
         }
     }
 
+    private fun chooseBluetoothDevice() {
+        if (!hasBluetoothPermission()) {
+            pendingBluetoothSelection = true
+            bluetoothPermission.launch(Manifest.permission.BLUETOOTH_CONNECT)
+            return
+        }
+        if (!isBluetoothEnabled()) {
+            pendingBluetoothSelection = true
+            enableBluetooth.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
+            return
+        }
+        pendingBluetoothSelection = false
+
+        val candidates = audioRouteManager.bluetoothCandidates()
+        if (candidates.isEmpty()) {
+            AlertDialog.Builder(this)
+                .setTitle("没有可用的蓝牙设备")
+                .setMessage("请先在系统蓝牙设置中配对蓝牙通话设备。")
+                .setPositiveButton("知道了", null)
+                .show()
+            return
+        }
+
+        val selectedKey = audioRouteManager.selectedBluetoothKey()
+        val ordered = candidates.sortedByDescending { it.key == selectedKey }
+        val labels = ordered.map {
+            if (it.key == selectedKey) "${it.displayLabel}（已选择）" else it.displayLabel
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("选择蓝牙通话设备")
+            .setItems(labels) { _, index ->
+                audioRouteManager.saveBluetoothCandidate(ordered[index])
+                updateSelectedBluetoothText()
+                activeRouteKey = null
+                scheduleRouteChecks()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun updateSelectedBluetoothText() {
+        selectedBluetoothText.text = audioRouteManager.selectedBluetoothName()?.let {
+            "已选择：$it"
+        } ?: "尚未选择蓝牙设备"
+    }
+
+    private fun hasBluetoothPermission(): Boolean =
+        android.os.Build.VERSION.SDK_INT < 31 ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) ==
+            PackageManager.PERMISSION_GRANTED
+
+    private fun isBluetoothEnabled(): Boolean =
+        getSystemService(BluetoothManager::class.java).adapter?.isEnabled == true
+
     private fun stopSession() {
+        userRequestedStop = true
+        handler.removeCallbacks(reconnectSession)
         finishSessionDuration()
         coordinator.stop(DisconnectReason.USER_REQUEST)
+        V2VoiceForegroundService.stop(this)
         showIdleUi("会话已结束；请重新连接 Type-C 或蓝牙设备后自动开始。")
     }
 
@@ -187,6 +295,8 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         }
 
         if (routeKey == null) {
+            handler.removeCallbacks(reconnectSession)
+            V2VoiceForegroundService.stop(this)
             val hadRoute = activeRouteKey != null
             activeRouteKey = null
             if (hadRoute && coordinator.state != RealtimeVoiceState.IDLE) {
@@ -253,9 +363,17 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
                 RealtimeVoiceEvent.ModelResponseEnded ->
                     showActiveUi("正在聆听", "回答结束，可以继续说话。")
                 is RealtimeVoiceEvent.Failure -> {
-                    finishSessionDuration()
                     coordinator.stop(DisconnectReason.SERVICE_ERROR)
-                    showError("V2 服务错误", "${event.code}: ${event.message}")
+                    if (event.retryable && !userRequestedStop && activeRouteKey != null) {
+                        statusText.text = "连接中断，正在恢复"
+                        detailText.text = "${event.code}: ${event.message}"
+                        handler.removeCallbacks(reconnectSession)
+                        handler.postDelayed(reconnectSession, RECONNECT_DELAY_MS)
+                    } else {
+                        finishSessionDuration()
+                        V2VoiceForegroundService.stop(this)
+                        showError("V2 服务错误", "${event.code}: ${event.message}")
+                    }
                 }
                 is RealtimeVoiceEvent.ModelAudio -> Unit
                 is RealtimeVoiceEvent.Usage -> {
@@ -310,16 +428,16 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         val formatter = NumberFormat.getIntegerInstance()
         val activeDuration = uncheckpointedDurationMs()
         totalTokensText.text =
-            "本机累计：${formatter.format(snapshot.totalTokens)} Token · " +
-                "${formatMinutes(snapshot.totalDurationMs + activeDuration)} 分钟"
+            "本月累计：${formatter.format(snapshot.monthTokens)} Token · " +
+                "${formatMinutes(snapshot.monthDurationMs + activeDuration)} 分钟"
         todayTokensText.text =
             "今日累计：${formatter.format(snapshot.todayTokens)} Token · " +
                 "${formatMinutes(snapshot.todayDurationMs + activeDuration)} 分钟"
         val price = BuildConfig.V2_PRICE_PER_MILLION_TOKENS
         estimatedCostText.text = if (price > 0.0) {
-            val totalCost = snapshot.totalTokens * price / 1_000_000.0
+            val totalCost = snapshot.monthTokens * price / 1_000_000.0
             val todayCost = snapshot.todayTokens * price / 1_000_000.0
-            "估算金额：累计 ¥%.4f · 今日 ¥%.4f".format(totalCost, todayCost)
+            "估算金额：本月 ¥%.4f · 今日 ¥%.4f".format(totalCost, todayCost)
         } else {
             "估算金额：未配置每百万 Token 单价"
         }
@@ -363,7 +481,9 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     }
 
     override fun onDestroy() {
+        userRequestedStop = true
         handler.removeCallbacksAndMessages(null)
+        V2VoiceForegroundService.stop(this)
         if (connectionReceiverRegistered) {
             unregisterReceiver(connectionReceiver)
             connectionReceiverRegistered = false
@@ -390,6 +510,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         private const val ROUTE_CHECK_INTERVAL_MS = 2_000L
         private const val DURATION_UI_INTERVAL_MS = 1_000L
         private const val DURATION_CHECKPOINT_INTERVAL_MS = 5_000L
+        private const val RECONNECT_DELAY_MS = 3_000L
         private val PCM_16K_MONO = AudioFormatSpec(16_000, 1, 16, "pcm")
         private val PCM_24K_MONO = AudioFormatSpec(24_000, 1, 16, "pcm")
 
