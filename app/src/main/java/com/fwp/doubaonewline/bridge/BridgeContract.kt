@@ -14,6 +14,23 @@ object BridgeContract {
     const val PREF_USB_ENABLED = "usb_audio_enabled"
     const val PREF_BLUETOOTH_ENABLED = "bluetooth_audio_enabled"
     const val PREF_BLUETOOTH_DEVICE = "bluetooth_audio_device"
+    const val PREF_READY_GREETING = "ready_greeting"
 
     const val DOUBAO_PACKAGE = "com.larus.nova"
+    const val DEFAULT_READY_GREETING = "豆包豆包，你好啊"
+
+    fun normalizeReadyGreeting(value: String?): String {
+        val greeting = value?.trim().orEmpty()
+        return if (greeting.isEmpty() || greeting in LEGACY_DEFAULT_READY_GREETINGS) {
+            DEFAULT_READY_GREETING
+        } else {
+            greeting
+        }
+    }
+
+    private val LEGACY_DEFAULT_READY_GREETINGS = setOf(
+        "你好啊，我准备好了，今天我们聊点什么",
+        "我是豆包，我准备好了，今天我们聊点什么",
+        "樊叔叔，我是豆包，今天我们聊点什么啊"
+    )
 }

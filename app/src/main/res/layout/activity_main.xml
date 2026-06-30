@@ -9,10 +9,10 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:paddingLeft="24dp"
+        android:paddingLeft="20dp"
         android:paddingTop="32dp"
-        android:paddingRight="24dp"
-        android:paddingBottom="32dp">
+        android:paddingRight="20dp"
+        android:paddingBottom="12dp">
 
         <TextView
             android:layout_width="wrap_content"
@@ -21,21 +21,21 @@
             android:textColor="@color/text"
             android:fontFamily="sans-serif-medium"
             android:letterSpacing="0.01"
-            android:textSize="28sp"
+            android:textSize="23sp"
             android:textStyle="bold" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="2dp"
             android:text="自动管理 Type-C 与蓝牙通话设备"
             android:textColor="@color/muted"
-            android:textSize="15sp" />
+            android:textSize="12sp" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
+            android:layout_marginTop="8dp"
             android:background="@drawable/status_background"
             android:orientation="vertical">
 
@@ -44,58 +44,56 @@
                 android:layout_height="wrap_content"
                 android:text="当前状态"
                 android:textColor="@color/primary"
-                android:textSize="13sp"
+                android:textSize="11sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/statusText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
+                android:layout_marginTop="2dp"
                 android:text="正在检查设备…"
                 android:textColor="@color/text"
-                android:textSize="21sp"
+                android:textSize="17sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/detailText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="3dp"
                 android:textColor="@color/muted"
-                android:textSize="14sp"
-                android:lineSpacingExtra="3dp" />
+                android:textSize="12sp"
+                android:lineSpacingExtra="1dp" />
         </LinearLayout>
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="28dp"
+            android:layout_marginTop="8dp"
             android:text="音频连接方式"
             android:textColor="@color/text"
-            android:textSize="18sp"
+            android:textSize="14sp"
             android:textStyle="bold" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="4dp"
             android:background="@drawable/settings_background"
             android:orientation="vertical"
-            android:paddingLeft="16dp"
-            android:paddingTop="8dp"
-            android:paddingRight="16dp"
-            android:paddingBottom="8dp">
+            android:paddingLeft="12dp"
+            android:paddingRight="12dp">
 
             <CheckBox
                 android:id="@+id/usbEnabledCheck"
                 android:layout_width="match_parent"
-                android:layout_height="56dp"
+                android:layout_height="38dp"
                 android:buttonTint="@color/primary"
                 android:checked="true"
                 android:text="启用 Type-C（优先）"
                 android:textColor="@color/text"
-                android:textSize="17sp" />
+                android:textSize="12sp" />
 
             <View
                 android:layout_width="match_parent"
@@ -105,70 +103,95 @@
             <CheckBox
                 android:id="@+id/bluetoothEnabledCheck"
                 android:layout_width="match_parent"
-                android:layout_height="56dp"
+                android:layout_height="38dp"
                 android:buttonTint="@color/primary"
                 android:checked="true"
                 android:text="启用蓝牙通话设备"
                 android:textColor="@color/text"
-                android:textSize="17sp" />
+                android:textSize="12sp" />
         </LinearLayout>
 
         <Button
             android:id="@+id/selectBluetoothButton"
             android:layout_width="match_parent"
-            android:layout_height="58dp"
-            android:layout_marginTop="20dp"
+            android:layout_height="42dp"
+            android:layout_marginTop="6dp"
             android:backgroundTint="@color/primary"
             android:text="选择蓝牙设备"
             android:textAllCaps="false"
             android:textColor="#FFFFFF"
-            android:textSize="17sp"
+            android:textSize="12sp"
             android:textStyle="bold" />
 
         <TextView
             android:id="@+id/selectedBluetoothText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="3dp"
             android:gravity="center"
             android:text="尚未选择蓝牙设备"
             android:textColor="@color/muted"
-            android:textSize="15sp" />
+            android:textSize="11sp" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="28dp"
+            android:layout_marginTop="7dp"
+            android:text="欢迎词"
+            android:textColor="@color/text"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <EditText
+            android:id="@+id/readyGreetingInput"
+            android:layout_width="match_parent"
+            android:layout_height="42dp"
+            android:layout_marginTop="3dp"
+            android:background="@drawable/settings_background"
+            android:gravity="center_vertical"
+            android:imeOptions="actionDone"
+            android:inputType="textCapSentences"
+            android:maxLines="1"
+            android:paddingLeft="12dp"
+            android:paddingRight="12dp"
+            android:selectAllOnFocus="true"
+            android:textColor="@color/text"
+            android:textSize="12sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
             android:text="自动操作"
             android:textColor="@color/text"
-            android:textSize="18sp"
+            android:textSize="14sp"
             android:textStyle="bold" />
 
         <LinearLayout
             android:id="@+id/accessibilitySettingRow"
             android:layout_width="match_parent"
-            android:layout_height="76dp"
-            android:layout_marginTop="12dp"
+            android:layout_height="58dp"
+            android:layout_marginTop="4dp"
             android:background="@drawable/settings_background"
             android:clickable="true"
             android:focusable="true"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:paddingLeft="16dp"
-            android:paddingRight="16dp">
+            android:paddingLeft="12dp"
+            android:paddingRight="12dp">
 
             <ImageView
-                android:layout_width="44dp"
-                android:layout_height="44dp"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
                 android:background="@drawable/accessibility_icon_background"
                 android:contentDescription="辅助服务"
-                android:padding="9dp"
+                android:padding="7dp"
                 android:src="@drawable/ic_accessibility_action" />
 
             <LinearLayout
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginLeft="14dp"
+                android:layout_marginLeft="9dp"
                 android:layout_weight="1"
                 android:orientation="vertical">
 
@@ -177,16 +200,16 @@
                     android:layout_height="wrap_content"
                     android:text="连续对话辅助服务"
                     android:textColor="@color/text"
-                    android:textSize="16sp"
+                    android:textSize="13sp"
                     android:textStyle="bold" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginTop="3dp"
+                    android:layout_marginTop="1dp"
                     android:text="自动进入豆包实时语音"
                     android:textColor="@color/muted"
-                    android:textSize="13sp" />
+                    android:textSize="11sp" />
             </LinearLayout>
 
             <TextView
@@ -195,7 +218,7 @@
                 android:layout_height="wrap_content"
                 android:text="未开启 · 点击设置"
                 android:textColor="@color/warning"
-                android:textSize="13sp"
+                android:textSize="11sp"
                 android:textStyle="bold" />
         </LinearLayout>
 

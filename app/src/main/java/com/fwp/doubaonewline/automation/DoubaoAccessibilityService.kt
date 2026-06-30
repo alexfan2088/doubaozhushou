@@ -57,6 +57,7 @@ class DoubaoAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.packageName?.toString() != DOUBAO_PACKAGE) return
+        if (!callStartRequested) return
         val now = SystemClock.elapsedRealtime()
         if (now - lastClickAt < CLICK_COOLDOWN_MS) return
 
@@ -67,6 +68,7 @@ class DoubaoAccessibilityService : AccessibilityService() {
         val clickable = findClickableAncestor(match.node) ?: return
 
         if (clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+            callStartRequested = false
             lastClickAt = now
             Log.i(TAG, "Clicked Doubao voice entry: ${match.label}")
         }
@@ -210,6 +212,8 @@ class DoubaoAccessibilityService : AccessibilityService() {
 
         @Volatile
         private var instance: DoubaoAccessibilityService? = null
+        @Volatile
+        private var callStartRequested = false
 
         fun requestHangup() {
             val service = instance
@@ -222,10 +226,16 @@ class DoubaoAccessibilityService : AccessibilityService() {
         }
 
         fun requestCallStart() {
+            callStartRequested = true
             instance?.apply {
                 lastClickAt = 0L
             }
             Log.i(TAG, "Doubao realtime call start requested")
+        }
+
+        fun cancelCallStart() {
+            callStartRequested = false
+            Log.i(TAG, "Doubao realtime call start request cancelled")
         }
     }
 }

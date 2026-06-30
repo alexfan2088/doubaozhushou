@@ -1,6 +1,9 @@
 package com.fwp.doubaonewline
 
 import android.Manifest
+import android.app.Activity
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
@@ -18,12 +21,15 @@ import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
 import android.widget.CheckBox
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.widget.doAfterTextChanged
 import com.fwp.doubaonewline.automation.DoubaoAccessibilityService
 import com.fwp.doubaonewline.bridge.BridgeContract
 import com.fwp.doubaonewline.bridge.AudioRouteManager
@@ -38,6 +44,18 @@ class MainActivity : AppCompatActivity() {
     private lateinit var audioRouteManager: AudioRouteManager
     private var receiverRegistered = false
     private var pendingBluetoothSelection = false
+    private val enableBluetoothLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            pendingBluetoothSelection = false
+            chooseBluetoothDevice()
+        } else {
+            pendingBluetoothSelection = false
+            statusText.text = "蓝牙未开启"
+            detailText.text = "需要开启蓝牙才能选择蓝牙通话设备。"
+        }
+    }
 
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -57,6 +75,7 @@ class MainActivity : AppCompatActivity() {
         accessibilityStatusText = findViewById(R.id.accessibilityStatusText)
         audioRouteManager = AudioRouteManager(this)
         setupAudioSettings()
+        setupReadyGreeting()
 
         findViewById<Button>(R.id.selectBluetoothButton).setOnClickListener {
             chooseBluetoothDevice()
@@ -183,11 +202,45 @@ class MainActivity : AppCompatActivity() {
         updateSelectedBluetoothText()
     }
 
+    private fun setupReadyGreeting() {
+        val prefs = getSharedPreferences(BridgeContract.PREFS, MODE_PRIVATE)
+        val greetingInput = findViewById<EditText>(R.id.readyGreetingInput)
+        val greeting = BridgeContract.normalizeReadyGreeting(
+            prefs.getString(BridgeContract.PREF_READY_GREETING, null)
+        )
+        greetingInput.setText(greeting)
+        prefs.edit()
+            .putString(BridgeContract.PREF_READY_GREETING, greeting)
+            .apply()
+        greetingInput.doAfterTextChanged { text ->
+            prefs.edit()
+                .putString(BridgeContract.PREF_READY_GREETING, text?.toString().orEmpty())
+                .apply()
+        }
+        greetingInput.setOnFocusChangeListener { _, hasFocus ->
+            if (!hasFocus) {
+                val normalizedGreeting = BridgeContract.normalizeReadyGreeting(
+                    greetingInput.text.toString()
+                )
+                greetingInput.setText(normalizedGreeting)
+                prefs.edit()
+                    .putString(BridgeContract.PREF_READY_GREETING, normalizedGreeting)
+                    .apply()
+            }
+        }
+    }
+
     private fun chooseBluetoothDevice() {
         if (!hasBluetoothPermission()) {
             requestBluetoothPermission(true)
             return
         }
+        if (!isBluetoothEnabled()) {
+            pendingBluetoothSelection = true
+            enableBluetoothLauncher.launch(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE))
+            return
+        }
+        pendingBluetoothSelection = false
 
         val candidates = audioRouteManager.bluetoothCandidates()
         if (candidates.isEmpty()) {
@@ -203,7 +256,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         val selectedKey = audioRouteManager.selectedBluetoothKey()
-        val names = candidates.map { candidate ->
+        val orderedCandidates = candidates.sortedByDescending { it.key == selectedKey }
+        val names = orderedCandidates.map { candidate ->
             if (candidate.key == selectedKey) {
                 selectedBluetoothListLabel(candidate.displayLabel)
             } else {
@@ -213,7 +267,7 @@ class MainActivity : AppCompatActivity() {
         AlertDialog.Builder(this)
             .setTitle("选择蓝牙通话设备")
             .setItems(names) { _, index ->
-                audioRouteManager.saveBluetoothCandidate(candidates[index])
+                audioRouteManager.saveBluetoothCandidate(orderedCandidates[index])
                 findViewById<CheckBox>(R.id.bluetoothEnabledCheck).isChecked = true
                 updateSelectedBluetoothText()
                 startServiceSafely()
@@ -286,6 +340,9 @@ class MainActivity : AppCompatActivity() {
         Build.VERSION.SDK_INT < 31 ||
             ActivityCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH_CONNECT) ==
             PackageManager.PERMISSION_GRANTED
+
+    private fun isBluetoothEnabled(): Boolean =
+        getSystemService(BluetoothManager::class.java).adapter?.isEnabled == true
 
     companion object {
         private const val REQUEST_NOTIFICATIONS = 100

@@ -13,20 +13,25 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.usb.UsbManager
+import android.media.AudioAttributes
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.speech.tts.TextToSpeech
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.fwp.doubaonewline.MainActivity
 import com.fwp.doubaonewline.R
 import com.fwp.doubaonewline.automation.DoubaoAccessibilityService
+import java.util.Locale
 
-class NewlineBridgeService : Service() {
+class NewlineBridgeService : Service(), TextToSpeech.OnInitListener {
 
     private lateinit var audioMonitor: AudioDeviceMonitor
     private lateinit var audioRouteManager: AudioRouteManager
+    private var textToSpeech: TextToSpeech? = null
+    private var textToSpeechReady = false
     private var launchedRouteKey: String? = null
     private val handler = Handler(Looper.getMainLooper())
     private var connectionReceiverRegistered = false
@@ -46,9 +51,10 @@ class NewlineBridgeService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, notification("等待连接 Newline"))
+        startForeground(NOTIFICATION_ID, notification("等待连接"))
 
         audioRouteManager = AudioRouteManager(this)
+        textToSpeech = TextToSpeech(this, this)
         audioMonitor = AudioDeviceMonitor(this, ::handleAudioSnapshot)
         registerConnectionReceiver()
         audioMonitor.start()
@@ -67,16 +73,42 @@ class NewlineBridgeService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        DoubaoAccessibilityService.cancelCallStart()
         if (connectionReceiverRegistered) {
             unregisterReceiver(connectionReceiver)
             connectionReceiverRegistered = false
         }
         audioMonitor.stop()
         audioRouteManager.clear()
+        textToSpeech?.stop()
+        textToSpeech?.shutdown()
+        textToSpeech = null
+        textToSpeechReady = false
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onInit(status: Int) {
+        val tts = textToSpeech ?: return
+        if (status != TextToSpeech.SUCCESS) {
+            Log.w(TAG, "Text-to-speech initialization failed: $status")
+            return
+        }
+        val languageResult = tts.setLanguage(Locale.SIMPLIFIED_CHINESE)
+        textToSpeechReady =
+            languageResult != TextToSpeech.LANG_MISSING_DATA &&
+                languageResult != TextToSpeech.LANG_NOT_SUPPORTED
+        tts.setAudioAttributes(
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
+        )
+        if (!textToSpeechReady) {
+            Log.w(TAG, "Simplified Chinese text-to-speech is unavailable")
+        }
+    }
 
     private fun inspectCurrentState() {
         val snapshot = audioMonitor.snapshot()
@@ -135,37 +167,60 @@ class NewlineBridgeService : Service() {
             appendLine("USB 音频输入：${snapshot.usbInputs.ifEmpty { listOf("未发现") }.joinToString()}")
             appendLine("USB 音频输出：${snapshot.usbOutputs.ifEmpty { listOf("未发现") }.joinToString()}")
             appendLine("当前路由：${selection.label}")
-            appendLine("蓝牙已连接：${if (selectedBluetoothConnected) "是" else "否"}")
-            append("系统路由请求：${if (selection.routeAccepted) "已接受" else "使用系统默认"}")
+            append("蓝牙已连接：${if (selectedBluetoothConnected) "是" else "否"}")
         }
 
         if (routeKey == null) {
             launchedRouteKey = null
-            if (selection.kind == AudioRouteManager.Kind.BLUETOOTH && !selectedBluetoothConnected) {
-                publish("蓝牙设备已选中，等待连接", details)
-                return
-            }
-            publish("等待双向音频设备", details)
+            DoubaoAccessibilityService.cancelCallStart()
+            publish("等待连接", details)
             return
         }
 
-        val routeName = when (selection.kind) {
-            AudioRouteManager.Kind.USB -> "Type-C 音频已就绪"
-            AudioRouteManager.Kind.BLUETOOTH -> "蓝牙通话音频已就绪"
-            AudioRouteManager.Kind.NONE -> "等待音频设备"
+        val connectionStatus = when (selection.kind) {
+            AudioRouteManager.Kind.USB -> "type c 数据线已经连接"
+            AudioRouteManager.Kind.BLUETOOTH -> "蓝牙设备已经连接"
+            AudioRouteManager.Kind.NONE -> "等待连接"
         }
-        publish(routeName, details)
+        publish(connectionStatus, details)
         if (launchedRouteKey != routeKey) {
             launchedRouteKey = routeKey
             DoubaoAccessibilityService.requestCallStart()
             DoubaoLauncher(this).launch()
-                .onSuccess { publish("豆包已启动，可以开始对话", details) }
+                .onSuccess {
+                    publish(connectionStatus, details)
+                    scheduleReadyGreeting(routeKey)
+                }
                 .onFailure {
                     launchedRouteKey = null
+                    DoubaoAccessibilityService.cancelCallStart()
                     Log.e(TAG, "Unable to launch Doubao", it)
                     publish("豆包启动失败", "$details\n原因：${it.message}")
                 }
         }
+    }
+
+    private fun scheduleReadyGreeting(routeKey: String) {
+        handler.postDelayed(
+            {
+                if (launchedRouteKey != routeKey) return@postDelayed
+                if (!textToSpeechReady) {
+                    Log.w(TAG, "Ready greeting skipped because text-to-speech is not ready")
+                    return@postDelayed
+                }
+                val greeting = BridgeContract.normalizeReadyGreeting(
+                    getSharedPreferences(BridgeContract.PREFS, MODE_PRIVATE)
+                        .getString(BridgeContract.PREF_READY_GREETING, null)
+                )
+                textToSpeech?.speak(
+                    greeting,
+                    TextToSpeech.QUEUE_FLUSH,
+                    null,
+                    READY_GREETING_ID
+                )
+            },
+            READY_GREETING_DELAY_MS
+        )
     }
 
     private fun publish(status: String, detail: String) {
@@ -221,6 +276,8 @@ class NewlineBridgeService : Service() {
         private const val CHANNEL_ID = "newline_bridge"
         private const val NOTIFICATION_ID = 1001
         private const val INSPECTION_INTERVAL_MS = 2_000L
+        private const val READY_GREETING_DELAY_MS = 6_000L
+        private const val READY_GREETING_ID = "doubao_ready_greeting"
 
         fun start(context: Context, action: String = BridgeContract.ACTION_START) {
             val intent = Intent(context, NewlineBridgeService::class.java).setAction(action)
