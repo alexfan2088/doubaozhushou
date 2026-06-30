@@ -34,6 +34,7 @@ import com.fwp.doubaonewline.automation.DoubaoAccessibilityService
 import com.fwp.doubaonewline.bridge.BridgeContract
 import com.fwp.doubaonewline.bridge.AudioRouteManager
 import com.fwp.doubaonewline.bridge.NewlineBridgeService
+import com.fwp.doubaonewline.v2.V2Activity
 
 class MainActivity : AppCompatActivity() {
 
@@ -77,6 +78,10 @@ class MainActivity : AppCompatActivity() {
         setupAudioSettings()
         setupReadyGreeting()
 
+        findViewById<Button>(R.id.switchToV2Button).setOnClickListener {
+            startActivity(Intent(this, V2Activity::class.java))
+            finish()
+        }
         findViewById<Button>(R.id.selectBluetoothButton).setOnClickListener {
             chooseBluetoothDevice()
         }

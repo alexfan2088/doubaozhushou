@@ -4,6 +4,7 @@
 .gradle-local/
 .idea/
 local.properties
+vendor/
 build/
 captures/
 .externalNativeBuild/

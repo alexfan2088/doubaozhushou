@@ -11,6 +11,7 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven(url = "https://artifact.bytedance.com/repository/Volcengine/")
     }
 }
 
