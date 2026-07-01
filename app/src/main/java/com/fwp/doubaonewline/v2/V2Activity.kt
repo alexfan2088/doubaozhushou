@@ -15,6 +15,8 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.hardware.usb.UsbManager
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -24,6 +26,7 @@ import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
@@ -51,12 +54,14 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     private lateinit var sessionTokensText: TextView
     private lateinit var estimatedCostText: TextView
     private lateinit var selectedBluetoothText: TextView
+    private lateinit var localWakeCheck: CheckBox
 
     private lateinit var client: VolcengineRealtimeVoiceClient
     private lateinit var coordinator: V2SessionCoordinator
     private lateinit var usageTracker: V2UsageTracker
     private lateinit var audioMonitor: AudioDeviceMonitor
     private lateinit var audioRouteManager: AudioRouteManager
+    private lateinit var wakeWordDetector: OfflineWakeWordDetector
     private val handler = Handler(Looper.getMainLooper())
     private var startAfterPermission = false
     private var activeRouteKey: String? = null
@@ -73,6 +78,8 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     private var sessionOutputTextTokens = 0L
     private var sessionOutputAudioTokens = 0L
     private var activeConnectionDetail = ""
+    private var activeWakeInput: AudioDeviceInfo? = null
+    private var cloudSessionActive = false
 
     private val connectionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -103,6 +110,33 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
             coordinator.state == RealtimeVoiceState.IDLE
         ) {
             startSession(resetSession = false, announceWelcome = false)
+        }
+    }
+
+    private val enterLocalWakeStandby: Runnable = Runnable {
+        tryEnterLocalWakeStandby()
+    }
+
+    private fun tryEnterLocalWakeStandby() {
+        if (
+            localWakeCheck.isChecked &&
+            !manuallyPaused &&
+            !userRequestedStop &&
+            activeRouteKey != null &&
+            cloudSessionActive
+        ) {
+            if (
+                client.state == RealtimeVoiceState.MODEL_SPEAKING ||
+                client.state == RealtimeVoiceState.USER_SPEAKING
+            ) {
+                handler.postDelayed(enterLocalWakeStandby, BUSY_RECHECK_DELAY_MS)
+                return
+            }
+            cloudSessionActive = false
+            coordinator.stop(DisconnectReason.IDLE_TIMEOUT)
+            statusText.text = "请用豆包豆包唤醒"
+            detailText.text = "$activeConnectionDetail\n本地监听中，不消耗云端 Token。"
+            handler.postDelayed({ startLocalWakeListening() }, AUDIO_HANDOFF_DELAY_MS)
         }
     }
 
@@ -151,6 +185,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         sessionTokensText = findViewById(R.id.v2SessionTokensText)
         estimatedCostText = findViewById(R.id.v2EstimatedCostText)
         selectedBluetoothText = findViewById(R.id.v2SelectedBluetoothText)
+        localWakeCheck = findViewById(R.id.v2LocalWakeCheck)
 
         getSharedPreferences(BridgeContract.PREFS, MODE_PRIVATE)
             .edit()
@@ -164,10 +199,60 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         coordinator = V2SessionCoordinator(LocalTestCredentialProvider, client)
         usageTracker = V2UsageTracker(this)
         audioRouteManager = AudioRouteManager(this)
+        wakeWordDetector = OfflineWakeWordDetector(
+            this,
+            onDetected = {
+                runOnUiThread {
+                    if (
+                        localWakeCheck.isChecked &&
+                        !manuallyPaused &&
+                        activeRouteKey != null
+                    ) {
+                        statusText.text = "已听到豆包豆包"
+                        detailText.text = "正在连接云端语音模型…"
+                        handler.postDelayed(
+                            {
+                                startSession(
+                                    resetSession = false,
+                                    announceWelcome = false
+                                )
+                            },
+                            WAKE_CONNECT_DELAY_MS
+                        )
+                    }
+                }
+            },
+            onFailure = {
+                runOnUiThread {
+                    showError("本地唤醒失败", it.message ?: it.javaClass.simpleName)
+                }
+            }
+        )
         audioMonitor = AudioDeviceMonitor(this) { inspectAudioRoute() }
         renderUsage(usageTracker.snapshot())
         renderSessionTokens()
         updateSelectedBluetoothText()
+        localWakeCheck.isChecked = getSharedPreferences(PREFS, MODE_PRIVATE)
+            .getBoolean(KEY_LOCAL_WAKE_ENABLED, false)
+        localWakeCheck.setOnCheckedChangeListener { _, checked ->
+            getSharedPreferences(PREFS, MODE_PRIVATE)
+                .edit()
+                .putBoolean(KEY_LOCAL_WAKE_ENABLED, checked)
+                .apply()
+            handler.removeCallbacks(enterLocalWakeStandby)
+            if (checked) {
+                if (cloudSessionActive) scheduleLocalWakeStandby()
+            } else {
+                wakeWordDetector.stop()
+                if (
+                    !manuallyPaused &&
+                    activeRouteKey != null &&
+                    !cloudSessionActive
+                ) {
+                    startSession(resetSession = false, announceWelcome = false)
+                }
+            }
+        }
 
         findViewById<Button>(R.id.v2SelectBluetoothButton).setOnClickListener {
             chooseBluetoothDevice()
@@ -203,6 +288,8 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         announceWelcome: Boolean = true
     ) {
         if (activeRouteKey == null) return
+        handler.removeCallbacks(enterLocalWakeStandby)
+        wakeWordDetector.stop()
         userRequestedStop = false
         V2VoiceForegroundService.start(this)
         if (resetSession) {
@@ -228,9 +315,51 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
                 outputFormat = PCM_24K_MONO
             )
         }.onFailure {
+            cloudSessionActive = false
             finishSessionDuration()
             showError("V2 连接失败", it.message ?: it.javaClass.simpleName)
         }
+    }
+
+    private fun scheduleLocalWakeStandby() {
+        handler.removeCallbacks(enterLocalWakeStandby)
+        if (localWakeCheck.isChecked && cloudSessionActive) {
+            handler.postDelayed(enterLocalWakeStandby, LOCAL_WAKE_IDLE_TIMEOUT_MS)
+        }
+    }
+
+    private fun startLocalWakeListening() {
+        val input = activeWakeInput ?: run {
+            showError("本地唤醒不可用", "没有找到可用麦克风。")
+            return
+        }
+        if (!wakeWordDetector.start(input, WakeCalibrationStore.DEFAULT_PROFILE)) {
+            showError("本地唤醒不可用", "缺少麦克风权限。")
+        }
+    }
+
+    private fun selectWakeInput(
+        kind: AudioRouteManager.Kind,
+        externalRouteAccepted: Boolean
+    ): AudioDeviceInfo? {
+        val inputs = getSystemService(AudioManager::class.java)
+            .getDevices(AudioManager.GET_DEVICES_INPUTS)
+        if (externalRouteAccepted) {
+            val external = inputs.firstOrNull {
+                when (kind) {
+                    AudioRouteManager.Kind.USB ->
+                        it.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
+                            it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+                            it.type == AudioDeviceInfo.TYPE_USB_ACCESSORY
+                    AudioRouteManager.Kind.BLUETOOTH ->
+                        it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                            it.type == AudioDeviceInfo.TYPE_BLE_HEADSET
+                    AudioRouteManager.Kind.NONE -> false
+                }
+            }
+            if (external != null) return external
+        }
+        return inputs.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC }
     }
 
     private fun chooseBluetoothDevice() {
@@ -321,6 +450,9 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         manuallyPaused = true
         userRequestedStop = true
         handler.removeCallbacks(reconnectSession)
+        handler.removeCallbacks(enterLocalWakeStandby)
+        wakeWordDetector.stop()
+        cloudSessionActive = false
         finishSessionDuration()
         coordinator.stop(DisconnectReason.USER_REQUEST)
         V2VoiceForegroundService.stop(this)
@@ -344,6 +476,9 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         manuallyPaused = false
         userRequestedStop = true
         handler.removeCallbacks(reconnectSession)
+        handler.removeCallbacks(enterLocalWakeStandby)
+        wakeWordDetector.stop()
+        cloudSessionActive = false
         finishSessionDuration()
         coordinator.stop(DisconnectReason.USER_REQUEST)
         V2VoiceForegroundService.stop(this)
@@ -353,6 +488,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         if (!::audioMonitor.isInitialized || !::audioRouteManager.isInitialized) return
         val snapshot = audioMonitor.snapshot()
         val selection = audioRouteManager.select(snapshot)
+        activeWakeInput = selectWakeInput(selection.kind, selection.routeAccepted)
         activeConnectionDetail = when (selection.kind) {
             AudioRouteManager.Kind.USB ->
                 if (selection.routeAccepted) {
@@ -385,6 +521,9 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
 
         if (routeKey == null) {
             handler.removeCallbacks(reconnectSession)
+            handler.removeCallbacks(enterLocalWakeStandby)
+            wakeWordDetector.stop()
+            cloudSessionActive = false
             V2VoiceForegroundService.stop(this)
             val hadRoute = activeRouteKey != null
             activeRouteKey = null
@@ -397,6 +536,9 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         }
 
         if (routeKey != activeRouteKey) {
+            handler.removeCallbacks(enterLocalWakeStandby)
+            wakeWordDetector.stop()
+            cloudSessionActive = false
             if (coordinator.state != RealtimeVoiceState.IDLE) {
                 finishSessionDuration()
                 coordinator.stop(DisconnectReason.AUDIO_DEVICE_LOST)
@@ -442,22 +584,32 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         runOnUiThread {
             when (event) {
                 RealtimeVoiceEvent.Connected -> {
+                    cloudSessionActive = true
                     if (sessionStartedAtMs == null) {
                         val now = SystemClock.elapsedRealtime()
                         sessionStartedAtMs = now
                         lastDurationCheckpointAtMs = now
                     }
                     showActiveUi("正在聆听", activeConnectionDetail)
+                    scheduleLocalWakeStandby()
                 }
-                RealtimeVoiceEvent.UserSpeechStarted ->
+                RealtimeVoiceEvent.UserSpeechStarted -> {
                     showActiveUi("正在听你说话", "$activeConnectionDetail\n检测到用户语音。")
-                RealtimeVoiceEvent.UserSpeechEnded ->
+                }
+                RealtimeVoiceEvent.UserSpeechEnded -> {
                     showActiveUi("正在思考", "$activeConnectionDetail\n等待模型回答。")
-                RealtimeVoiceEvent.ModelResponseStarted ->
+                }
+                RealtimeVoiceEvent.ModelResponseStarted -> {
+                    handler.removeCallbacks(enterLocalWakeStandby)
                     showActiveUi("豆包正在回答", "$activeConnectionDetail\n直接开口即可打断。")
-                RealtimeVoiceEvent.ModelResponseEnded ->
+                }
+                RealtimeVoiceEvent.ModelResponseEnded -> {
                     showActiveUi("正在聆听", activeConnectionDetail)
+                    scheduleLocalWakeStandby()
+                }
                 is RealtimeVoiceEvent.Failure -> {
+                    cloudSessionActive = false
+                    handler.removeCallbacks(enterLocalWakeStandby)
                     coordinator.stop(DisconnectReason.SERVICE_ERROR)
                     if (event.retryable && !userRequestedStop && activeRouteKey != null) {
                         statusText.text = "连接中断，正在恢复"
@@ -591,6 +743,9 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     override fun onDestroy() {
         userRequestedStop = true
         handler.removeCallbacksAndMessages(null)
+        if (::wakeWordDetector.isInitialized) {
+            wakeWordDetector.stop()
+        }
         V2VoiceForegroundService.stop(this)
         if (connectionReceiverRegistered) {
             unregisterReceiver(connectionReceiver)
@@ -619,6 +774,11 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         private const val DURATION_UI_INTERVAL_MS = 1_000L
         private const val DURATION_CHECKPOINT_INTERVAL_MS = 5_000L
         private const val RECONNECT_DELAY_MS = 3_000L
+        private const val LOCAL_WAKE_IDLE_TIMEOUT_MS = 30_000L
+        private const val AUDIO_HANDOFF_DELAY_MS = 600L
+        private const val WAKE_CONNECT_DELAY_MS = 350L
+        private const val BUSY_RECHECK_DELAY_MS = 1_000L
+        private const val KEY_LOCAL_WAKE_ENABLED = "local_wake_enabled"
         private val PCM_16K_MONO = AudioFormatSpec(16_000, 1, 16, "pcm")
         private val PCM_24K_MONO = AudioFormatSpec(24_000, 1, 16, "pcm")
 

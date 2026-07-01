@@ -86,6 +86,17 @@
             android:textColor="@color/muted"
             android:textSize="11sp" />
 
+        <CheckBox
+            android:id="@+id/v2LocalWakeCheck"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:layout_marginTop="8dp"
+            android:buttonTint="@color/primary"
+            android:checked="false"
+            android:text="本地唤醒（豆包豆包）"
+            android:textColor="@color/text"
+            android:textSize="13sp" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

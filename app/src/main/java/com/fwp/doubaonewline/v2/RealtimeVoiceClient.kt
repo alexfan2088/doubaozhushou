@@ -57,6 +57,7 @@ enum class RealtimeVoiceState {
 
 enum class DisconnectReason {
     USER_REQUEST,
+    IDLE_TIMEOUT,
     AUDIO_DEVICE_LOST,
     NETWORK_ERROR,
     CREDENTIAL_ERROR,
