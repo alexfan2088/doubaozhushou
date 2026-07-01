@@ -140,7 +140,6 @@ class NewlineBridgeService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun handleAudioSnapshot(snapshot: AudioDeviceMonitor.Snapshot) {
-        val usbDevices = getSystemService(UsbManager::class.java).deviceList.values
         val selection = audioRouteManager.select(snapshot)
         val selectedBluetoothConnected = audioRouteManager.selectedBluetoothConnected()
         val routeKey = when (selection.kind) {
@@ -154,48 +153,55 @@ class NewlineBridgeService : Service(), TextToSpeech.OnInitListener {
             }
             AudioRouteManager.Kind.NONE -> null
         }
-        val details = buildString {
-            if (usbDevices.isNotEmpty()) {
-                appendLine("USB：")
-                usbDevices.forEach {
-                    appendLine(
-                        "${it.productName ?: it.deviceName} " +
-                            "VID=${it.vendorId} PID=${it.productId} class=${it.deviceClass}"
-                    )
-                }
-            }
-            appendLine("USB 音频输入：${snapshot.usbInputs.ifEmpty { listOf("未发现") }.joinToString()}")
-            appendLine("USB 音频输出：${snapshot.usbOutputs.ifEmpty { listOf("未发现") }.joinToString()}")
-            appendLine("当前路由：${selection.label}")
-            append("蓝牙已连接：${if (selectedBluetoothConnected) "是" else "否"}")
-        }
-
         if (routeKey == null) {
             launchedRouteKey = null
             DoubaoAccessibilityService.cancelCallStart()
-            publish("等待连接", details)
+            publish(
+                "等待设备连接",
+                "连接 Type-C 或当前选择的蓝牙设备后，将自动启动 V1 豆包。"
+            )
             return
         }
 
         val connectionStatus = when (selection.kind) {
-            AudioRouteManager.Kind.USB -> "type c 数据线已经连接"
-            AudioRouteManager.Kind.BLUETOOTH -> "蓝牙设备已经连接"
+            AudioRouteManager.Kind.USB -> "V1 已通过数据线连接"
+            AudioRouteManager.Kind.BLUETOOTH -> {
+                val name = audioRouteManager.selectedBluetoothName()
+                    ?.substringBefore("（") ?: selection.label.substringBefore("（")
+                "V1 已蓝牙连接 $name"
+            }
             AudioRouteManager.Kind.NONE -> "等待连接"
         }
-        publish(connectionStatus, details)
+        val pickupDetail = when (selection.kind) {
+            AudioRouteManager.Kind.USB ->
+                if (selection.routeAccepted) {
+                    "当前优先使用 Type-C 设备拾音。"
+                } else {
+                    "Type-C 设备无可用拾音，使用手机麦克风。"
+                }
+            AudioRouteManager.Kind.BLUETOOTH ->
+                if (selection.routeAccepted) {
+                    "当前优先使用蓝牙 HFP 麦克风。"
+                } else {
+                    "蓝牙设备无 HFP 拾音，使用手机麦克风。"
+                }
+            AudioRouteManager.Kind.NONE -> ""
+        }
+        val connectionDetails = pickupDetail
+        publish(connectionStatus, connectionDetails)
         if (launchedRouteKey != routeKey) {
             launchedRouteKey = routeKey
             DoubaoAccessibilityService.requestCallStart()
             DoubaoLauncher(this).launch()
                 .onSuccess {
-                    publish(connectionStatus, details)
+                    publish(connectionStatus, connectionDetails)
                     scheduleReadyGreeting(routeKey)
                 }
                 .onFailure {
                     launchedRouteKey = null
                     DoubaoAccessibilityService.cancelCallStart()
                     Log.e(TAG, "Unable to launch Doubao", it)
-                    publish("豆包启动失败", "$details\n原因：${it.message}")
+                    publish("豆包启动失败", "$connectionDetails\n原因：${it.message}")
                 }
         }
     }

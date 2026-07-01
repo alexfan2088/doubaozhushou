@@ -61,7 +61,6 @@ enum class DisconnectReason {
     NETWORK_ERROR,
     CREDENTIAL_ERROR,
     SERVICE_ERROR,
-    IDLE_TIMEOUT,
     APP_SHUTDOWN
 }
 
@@ -73,15 +72,13 @@ sealed interface RealtimeVoiceEvent {
     data class ModelAudio(val frame: AudioFrame) : RealtimeVoiceEvent
     data object ModelResponseEnded : RealtimeVoiceEvent
     data class Usage(
-        val inputAudioTokens: Long,
-        val inputTextTokens: Long,
-        val outputAudioTokens: Long,
-        val outputTextTokens: Long
-    ) : RealtimeVoiceEvent {
-        val inputUnits: Long get() = inputAudioTokens + inputTextTokens
-        val outputUnits: Long get() = outputAudioTokens + outputTextTokens
-        val totalUnits: Long get() = inputUnits + outputUnits
-    }
+        val inputUnits: Long,
+        val outputUnits: Long,
+        val inputTextUnits: Long = 0,
+        val inputAudioUnits: Long = 0,
+        val outputTextUnits: Long = 0,
+        val outputAudioUnits: Long = 0
+    ) : RealtimeVoiceEvent
     data class Failure(val code: String, val message: String, val retryable: Boolean) :
         RealtimeVoiceEvent
 }

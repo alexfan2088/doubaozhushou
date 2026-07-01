@@ -15,7 +15,6 @@
         android:paddingBottom="20dp">
 
         <TextView
-            android:id="@+id/v2TitleText"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="豆包助手 V2"
@@ -24,7 +23,6 @@
             android:textStyle="bold" />
 
         <TextView
-            android:id="@+id/v2SubtitleText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
@@ -40,7 +38,6 @@
             android:orientation="vertical">
 
             <TextView
-                android:id="@+id/v2StatusLabelText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="V2 会话状态"
@@ -67,6 +64,27 @@
                 android:textColor="@color/muted"
                 android:textSize="12sp" />
         </LinearLayout>
+
+        <Button
+            android:id="@+id/v2SelectBluetoothButton"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:layout_marginTop="12dp"
+            android:backgroundTint="@color/primary"
+            android:text="选择蓝牙设备"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/v2SelectedBluetoothText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center"
+            android:text="尚未选择蓝牙设备"
+            android:textColor="@color/muted"
+            android:textSize="11sp" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -145,80 +163,16 @@
             android:text="暂停语音会话"
             android:textAllCaps="false" />
 
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/switchToV1Button"
-                android:layout_width="0dp"
-                android:layout_height="46dp"
-                android:layout_marginRight="4dp"
-                android:layout_weight="1"
-                android:backgroundTint="@color/success"
-                android:text="V1 豆包版"
-                android:textAllCaps="false"
-                android:textColor="#FFFFFF"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <Button
-                android:id="@+id/switchRealtimeModeButton"
-                android:layout_width="0dp"
-                android:layout_height="46dp"
-                android:layout_marginLeft="4dp"
-                android:layout_weight="1"
-                android:backgroundTint="@color/success"
-                android:text="V3 唤醒词版"
-                android:textAllCaps="false"
-                android:textColor="#FFFFFF"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
         <Button
-            android:id="@+id/v2SelectBluetoothButton"
+            android:id="@+id/switchToV1Button"
             android:layout_width="match_parent"
             android:layout_height="46dp"
             android:layout_marginTop="16dp"
-            android:backgroundTint="@color/primary"
-            android:text="选择蓝牙设备"
+            android:backgroundTint="@color/success"
+            android:text="切换到旧版 V1"
             android:textAllCaps="false"
             android:textColor="#FFFFFF"
             android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/v2SelectedBluetoothText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:gravity="center"
-            android:text="尚未选择蓝牙设备"
-            android:textColor="@color/muted"
-            android:textSize="11sp" />
-
-        <Button
-            android:id="@+id/v2CalibrateWakeButton"
-            android:layout_width="match_parent"
-            android:layout_height="46dp"
-            android:layout_marginTop="10dp"
-            android:backgroundTint="@color/primary"
-            android:text="标定“豆包豆包”唤醒（10次）"
-            android:textAllCaps="false"
-            android:textColor="#FFFFFF"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/v2CalibrationText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:gravity="center"
-            android:text="连接外接麦克风后可标定"
-            android:textColor="@color/muted"
-            android:textSize="11sp" />
 
         <TextView
             android:layout_width="match_parent"

@@ -79,11 +79,7 @@ class MainActivity : AppCompatActivity() {
         setupReadyGreeting()
 
         findViewById<Button>(R.id.switchToV2Button).setOnClickListener {
-            startActivity(V2Activity.createIntent(this, wakeWordMode = false))
-            finish()
-        }
-        findViewById<Button>(R.id.switchToV3Button).setOnClickListener {
-            startActivity(V2Activity.createIntent(this, wakeWordMode = true))
+            startActivity(Intent(this, V2Activity::class.java))
             finish()
         }
         findViewById<Button>(R.id.selectBluetoothButton).setOnClickListener {
@@ -287,7 +283,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun selectedBluetoothListLabel(deviceLabel: String): CharSequence {
-        val selectedText = "  已选择"
+        val selectedText = "  当前选择"
         return SpannableString(deviceLabel + selectedText).apply {
             setSpan(
                 ForegroundColorSpan(Color.rgb(21, 101, 192)),
@@ -307,12 +303,18 @@ class MainActivity : AppCompatActivity() {
                 length,
                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
             )
+            setSpan(
+                StyleSpan(Typeface.BOLD),
+                deviceLabel.length,
+                length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
         }
     }
 
     private fun updateSelectedBluetoothText() {
         selectedBluetoothText.text = audioRouteManager.selectedBluetoothName()?.let {
-            "已选择：$it"
+            "当前选择：$it"
         } ?: "尚未选择蓝牙设备"
     }
 

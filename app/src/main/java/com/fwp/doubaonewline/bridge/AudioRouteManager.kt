@@ -19,16 +19,13 @@ class AudioRouteManager(private val context: Context) {
     data class BluetoothCandidate(
         val key: String,
         val displayLabel: String,
-        val device: AudioDeviceInfo?,
-        val bluetoothDevice: BluetoothDevice
+        val device: AudioDeviceInfo?
     )
 
     data class Selection(
         val kind: Kind,
         val label: String,
-        val routeAccepted: Boolean,
-        val inputDevice: AudioDeviceInfo?,
-        val deviceKey: String?
+        val routeAccepted: Boolean
     )
 
     private val audioManager = context.getSystemService(AudioManager::class.java)
@@ -39,39 +36,40 @@ class AudioRouteManager(private val context: Context) {
     private var headsetProxy: BluetoothHeadset? = null
     @Volatile
     private var a2dpProxy: BluetoothA2dp? = null
-    private var activatedCommunicationIdentity: String? = null
 
     init {
         requestProfileProxy(BluetoothProfile.HEADSET) { headsetProxy = it as? BluetoothHeadset }
         requestProfileProxy(BluetoothProfile.A2DP) { a2dpProxy = it as? BluetoothA2dp }
     }
 
-    fun select(
-        snapshot: AudioDeviceMonitor.Snapshot,
-        permissiveBluetooth: Boolean = false
-    ): Selection {
+    fun select(snapshot: AudioDeviceMonitor.Snapshot): Selection {
         val usbEnabled = prefs.getBoolean(BridgeContract.PREF_USB_ENABLED, true)
         val bluetoothEnabled = prefs.getBoolean(BridgeContract.PREF_BLUETOOTH_ENABLED, false)
 
         if (usbEnabled && snapshot.ready) {
-            releaseBluetoothCommunication()
-            suppressBluetoothA2dp()
             val device = availableCommunicationDevices().firstOrNull(::isUsb)
             return activate(device, Kind.USB, device?.productName?.toString() ?: "Type-C USB 音频")
         }
 
         if (bluetoothEnabled && hasBluetoothPermission()) {
-            restoreBluetoothA2dp()
             val selectedKey = selectedBluetoothKey()
             val candidate = bluetoothCandidates().firstOrNull { it.key == selectedKey }
             if (candidate != null) {
-                if (permissiveBluetooth) {
-                    return activatePermissiveBluetooth(candidate)
+                val selectedHfpConnected = selectedBluetoothHfpConnected()
+                if (!selectedHfpConnected && candidate.device == null) {
+                    releaseBluetoothCommunication()
+                    return Selection(
+                        Kind.BLUETOOTH,
+                        candidate.displayLabel,
+                        false
+                    )
                 }
-                requestSelectedBluetoothAudio(candidate.bluetoothDevice)
                 val communicationDevice = candidate.device
-                    ?: availableCommunicationDevices()
-                        .firstOrNull(::isBluetoothCommunication)
+                    ?: if (selectedHfpConnected) {
+                        availableCommunicationDevices().firstOrNull(::isBluetoothCommunication)
+                    } else {
+                        null
+                    }
                 return activate(
                     communicationDevice,
                     Kind.BLUETOOTH,
@@ -81,25 +79,7 @@ class AudioRouteManager(private val context: Context) {
         }
 
         clear()
-        return Selection(Kind.NONE, "无可用双向音频设备", false, null, null)
-    }
-
-    private fun activatePermissiveBluetooth(candidate: BluetoothCandidate): Selection {
-        val connected = selectedBluetoothConnected()
-        if (activatedCommunicationIdentity != "legacy:${candidate.key}") {
-            runCatching { audioManager.clearCommunicationDevice() }
-            releaseBluetoothCommunication()
-            restoreBluetoothA2dp()
-            activatedCommunicationIdentity = "legacy:${candidate.key}"
-        }
-        audioManager.mode = AudioManager.MODE_NORMAL
-        return Selection(
-            kind = Kind.BLUETOOTH,
-            label = candidate.displayLabel,
-            routeAccepted = connected,
-            inputDevice = null,
-            deviceKey = candidate.key
-        )
+        return Selection(Kind.NONE, "无可用双向音频设备", false)
     }
 
     fun bluetoothCandidates(): List<BluetoothCandidate> {
@@ -129,8 +109,7 @@ class AudioRouteManager(private val context: Context) {
                         bluetoothDevice,
                         bluetoothDevice.address.lowercase() in connectedAddresses
                     ),
-                    device = audioDevice,
-                    bluetoothDevice = bluetoothDevice
+                    device = audioDevice
                 )
             }
             .distinctBy { it.key }
@@ -168,9 +147,9 @@ class AudioRouteManager(private val context: Context) {
         return address.isNotEmpty() && address in connectedBluetoothAddresses()
     }
 
-    fun selectedBluetoothMicrophoneConnected(): Boolean {
+    private fun selectedBluetoothHfpConnected(): Boolean {
         val key = selectedBluetoothKey() ?: return false
-        val address = key.substringBefore('|').trim().lowercase()
+        val address = key.substringBefore('|').trim()
         if (address.isEmpty()) return false
         return runCatching {
             headsetProxy?.connectedDevices.orEmpty()
@@ -189,56 +168,22 @@ class AudioRouteManager(private val context: Context) {
 
     fun clear() {
         runCatching { audioManager.clearCommunicationDevice() }
-        activatedCommunicationIdentity = null
         releaseBluetoothCommunication()
-        restoreBluetoothA2dp()
         if (audioManager.mode == AudioManager.MODE_IN_COMMUNICATION) {
             audioManager.mode = AudioManager.MODE_NORMAL
         }
     }
 
     private fun releaseBluetoothCommunication() {
-        @Suppress("DEPRECATION")
-        if (
-            !audioManager.isBluetoothScoOn &&
-            audioManager.communicationDevice?.type != AudioDeviceInfo.TYPE_BLUETOOTH_SCO
-        ) {
-            return
-        }
+        runCatching { audioManager.clearCommunicationDevice() }
         runCatching {
             @Suppress("DEPRECATION")
             audioManager.isBluetoothScoOn = false
             @Suppress("DEPRECATION")
             audioManager.stopBluetoothSco()
         }
-    }
-
-    private fun suppressBluetoothA2dp() {
-        @Suppress("DEPRECATION")
-        if (audioManager.isBluetoothA2dpOn) {
-            @Suppress("DEPRECATION")
-            audioManager.isBluetoothA2dpOn = false
-        }
-    }
-
-    private fun restoreBluetoothA2dp() {
-        @Suppress("DEPRECATION")
-        if (!audioManager.isBluetoothA2dpOn) {
-            @Suppress("DEPRECATION")
-            audioManager.isBluetoothA2dpOn = true
-        }
-    }
-
-    private fun requestSelectedBluetoothAudio(device: BluetoothDevice) {
-        // Do not reject devices based on app-side capability guesses. Ask Android
-        // to open audio for exactly the device selected by the user; the platform
-        // will expose whichever HFP/SCO/A2DP routes that device actually provides.
-        runCatching { headsetProxy?.startVoiceRecognition(device) }
-        runCatching {
-            @Suppress("DEPRECATION")
-            audioManager.startBluetoothSco()
-            @Suppress("DEPRECATION")
-            audioManager.isBluetoothScoOn = true
+        if (audioManager.mode == AudioManager.MODE_IN_COMMUNICATION) {
+            audioManager.mode = AudioManager.MODE_NORMAL
         }
     }
 
@@ -248,54 +193,22 @@ class AudioRouteManager(private val context: Context) {
         fallbackLabel: String
     ): Selection {
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-        val current = audioManager.communicationDevice
-        val requestedIdentity = device?.let(::deviceIdentity)
-        var accepted = device != null && (
-            activatedCommunicationIdentity == requestedIdentity &&
-                current?.let { representsSameAudioDevice(it, device) } == true ||
-                runCatching { audioManager.setCommunicationDevice(device) }.getOrDefault(false)
-            )
-        if (kind == Kind.BLUETOOTH && !accepted) {
+        val accepted = device != null && runCatching {
+            audioManager.setCommunicationDevice(device)
+        }.getOrDefault(false)
+        if (kind == Kind.BLUETOOTH && accepted) {
             runCatching {
                 @Suppress("DEPRECATION")
                 audioManager.startBluetoothSco()
                 @Suppress("DEPRECATION")
                 audioManager.isBluetoothScoOn = true
             }
-            accepted = device != null && runCatching {
-                audioManager.setCommunicationDevice(device)
-            }.getOrDefault(false)
         }
-        if (accepted) {
-            activatedCommunicationIdentity = requestedIdentity
-        }
-        val input = externalInputs().firstOrNull { candidate ->
-            when (kind) {
-                Kind.USB -> isUsb(candidate)
-                Kind.BLUETOOTH -> isBluetoothCommunication(candidate)
-                Kind.NONE -> false
-            }
-        }
-        val key = input?.let(::deviceIdentity)
-        return Selection(
-            kind,
-            if (kind == Kind.BLUETOOTH) {
-                fallbackLabel
-            } else {
-                input?.productName?.toString() ?: device?.productName?.toString() ?: fallbackLabel
-            },
-            accepted && input != null,
-            input,
-            key
-        )
+        return Selection(kind, device?.productName?.toString() ?: fallbackLabel, accepted)
     }
 
     private fun availableCommunicationDevices(): List<AudioDeviceInfo> =
         runCatching { audioManager.availableCommunicationDevices }.getOrDefault(emptyList())
-
-    private fun externalInputs(): List<AudioDeviceInfo> =
-        audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
-            .filter { isUsb(it) || isBluetoothCommunication(it) }
 
     private fun hasBluetoothPermission(): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) ==
@@ -368,17 +281,6 @@ class AudioRouteManager(private val context: Context) {
 
     private fun deviceIdentity(device: AudioDeviceInfo): String =
         "${device.type}|${device.address}|${device.productName}"
-
-    private fun representsSameAudioDevice(
-        first: AudioDeviceInfo,
-        second: AudioDeviceInfo
-    ): Boolean {
-        if (first.address.isNotBlank() && second.address.isNotBlank()) {
-            return first.address.equals(second.address, ignoreCase = true)
-        }
-        return first.productName.toString()
-            .equals(second.productName.toString(), ignoreCase = true)
-    }
 
     private fun stableKey(device: AudioDeviceInfo): String = deviceIdentity(device)
 

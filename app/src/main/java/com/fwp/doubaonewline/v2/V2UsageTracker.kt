@@ -8,15 +8,7 @@ data class V2UsageSnapshot(
     val monthTokens: Long,
     val todayTokens: Long,
     val monthDurationMs: Long,
-    val todayDurationMs: Long,
-    val monthInputAudioTokens: Long,
-    val monthInputTextTokens: Long,
-    val monthOutputAudioTokens: Long,
-    val monthOutputTextTokens: Long,
-    val todayInputAudioTokens: Long,
-    val todayInputTextTokens: Long,
-    val todayOutputAudioTokens: Long,
-    val todayOutputTextTokens: Long
+    val todayDurationMs: Long
 )
 
 class V2UsageTracker(context: Context) {
@@ -31,18 +23,13 @@ class V2UsageTracker(context: Context) {
     }
 
     @Synchronized
-    fun add(usage: RealtimeVoiceEvent.Usage): V2UsageSnapshot {
-        val inputAudio = usage.inputAudioTokens.coerceAtLeast(0)
-        val inputText = usage.inputTextTokens.coerceAtLeast(0)
-        val outputAudio = usage.outputAudioTokens.coerceAtLeast(0)
-        val outputText = usage.outputTextTokens.coerceAtLeast(0)
-        val added = inputAudio + inputText + outputAudio + outputText
+    fun add(inputTokens: Long, outputTokens: Long): V2UsageSnapshot {
+        val added = (inputTokens.coerceAtLeast(0) + outputTokens.coerceAtLeast(0))
         val today = LocalDate.now().toString()
         val month = YearMonth.now().toString()
         val storedDay = prefs.getString(KEY_DAY, null)
-        val sameDay = storedDay == today
         val sameMonth = prefs.getString(KEY_MONTH, null) == month
-        val previousToday = if (sameDay) prefs.getLong(KEY_TODAY, 0L) else 0L
+        val previousToday = if (storedDay == today) prefs.getLong(KEY_TODAY, 0L) else 0L
         val monthTotal = (if (sameMonth) prefs.getLong(KEY_MONTH_TOKENS, 0L) else 0L) + added
         val todayTotal = previousToday + added
         prefs.edit()
@@ -50,40 +37,8 @@ class V2UsageTracker(context: Context) {
             .putLong(KEY_MONTH_TOKENS, monthTotal)
             .putString(KEY_DAY, today)
             .putLong(KEY_TODAY, todayTotal)
-            .putLong(
-                KEY_MONTH_INPUT_AUDIO,
-                (if (sameMonth) prefs.getLong(KEY_MONTH_INPUT_AUDIO, 0L) else 0L) + inputAudio
-            )
-            .putLong(
-                KEY_MONTH_INPUT_TEXT,
-                (if (sameMonth) prefs.getLong(KEY_MONTH_INPUT_TEXT, 0L) else 0L) + inputText
-            )
-            .putLong(
-                KEY_MONTH_OUTPUT_AUDIO,
-                (if (sameMonth) prefs.getLong(KEY_MONTH_OUTPUT_AUDIO, 0L) else 0L) + outputAudio
-            )
-            .putLong(
-                KEY_MONTH_OUTPUT_TEXT,
-                (if (sameMonth) prefs.getLong(KEY_MONTH_OUTPUT_TEXT, 0L) else 0L) + outputText
-            )
-            .putLong(
-                KEY_TODAY_INPUT_AUDIO,
-                (if (sameDay) prefs.getLong(KEY_TODAY_INPUT_AUDIO, 0L) else 0L) + inputAudio
-            )
-            .putLong(
-                KEY_TODAY_INPUT_TEXT,
-                (if (sameDay) prefs.getLong(KEY_TODAY_INPUT_TEXT, 0L) else 0L) + inputText
-            )
-            .putLong(
-                KEY_TODAY_OUTPUT_AUDIO,
-                (if (sameDay) prefs.getLong(KEY_TODAY_OUTPUT_AUDIO, 0L) else 0L) + outputAudio
-            )
-            .putLong(
-                KEY_TODAY_OUTPUT_TEXT,
-                (if (sameDay) prefs.getLong(KEY_TODAY_OUTPUT_TEXT, 0L) else 0L) + outputText
-            )
             .apply {
-                if (!sameDay) putLong(KEY_TODAY_DURATION, 0L)
+                if (storedDay != today) putLong(KEY_TODAY_DURATION, 0L)
                 if (!sameMonth) putLong(KEY_MONTH_DURATION, 0L)
             }
             .commit()
@@ -106,20 +61,8 @@ class V2UsageTracker(context: Context) {
             .putString(KEY_DAY, today)
             .putLong(KEY_TODAY_DURATION, todayTotal)
             .apply {
-                if (!sameDay) {
-                    putLong(KEY_TODAY, 0L)
-                    putLong(KEY_TODAY_INPUT_AUDIO, 0L)
-                    putLong(KEY_TODAY_INPUT_TEXT, 0L)
-                    putLong(KEY_TODAY_OUTPUT_AUDIO, 0L)
-                    putLong(KEY_TODAY_OUTPUT_TEXT, 0L)
-                }
-                if (!sameMonth) {
-                    putLong(KEY_MONTH_TOKENS, 0L)
-                    putLong(KEY_MONTH_INPUT_AUDIO, 0L)
-                    putLong(KEY_MONTH_INPUT_TEXT, 0L)
-                    putLong(KEY_MONTH_OUTPUT_AUDIO, 0L)
-                    putLong(KEY_MONTH_OUTPUT_TEXT, 0L)
-                }
+                if (!sameDay) putLong(KEY_TODAY, 0L)
+                if (!sameMonth) putLong(KEY_MONTH_TOKENS, 0L)
             }
             .commit()
         return snapshot()
@@ -143,20 +86,9 @@ class V2UsageTracker(context: Context) {
                 prefs.getLong(KEY_TODAY_DURATION, 0L)
             } else {
                 0L
-            },
-            monthInputAudioTokens = if (sameMonth) prefs.getLong(KEY_MONTH_INPUT_AUDIO, 0L) else 0L,
-            monthInputTextTokens = if (sameMonth) prefs.getLong(KEY_MONTH_INPUT_TEXT, 0L) else 0L,
-            monthOutputAudioTokens = if (sameMonth) prefs.getLong(KEY_MONTH_OUTPUT_AUDIO, 0L) else 0L,
-            monthOutputTextTokens = if (sameMonth) prefs.getLong(KEY_MONTH_OUTPUT_TEXT, 0L) else 0L,
-            todayInputAudioTokens = todayValue(KEY_TODAY_INPUT_AUDIO, today),
-            todayInputTextTokens = todayValue(KEY_TODAY_INPUT_TEXT, today),
-            todayOutputAudioTokens = todayValue(KEY_TODAY_OUTPUT_AUDIO, today),
-            todayOutputTextTokens = todayValue(KEY_TODAY_OUTPUT_TEXT, today)
+            }
         )
     }
-
-    private fun todayValue(key: String, today: String): Long =
-        if (prefs.getString(KEY_DAY, null) == today) prefs.getLong(key, 0L) else 0L
 
     companion object {
         private const val PREFS = "v2_usage"
@@ -166,15 +98,7 @@ class V2UsageTracker(context: Context) {
         private const val KEY_TODAY = "today_tokens"
         private const val KEY_MONTH_DURATION = "month_duration_ms"
         private const val KEY_TODAY_DURATION = "today_duration_ms"
-        private const val KEY_MONTH_INPUT_AUDIO = "month_input_audio_tokens"
-        private const val KEY_MONTH_INPUT_TEXT = "month_input_text_tokens"
-        private const val KEY_MONTH_OUTPUT_AUDIO = "month_output_audio_tokens"
-        private const val KEY_MONTH_OUTPUT_TEXT = "month_output_text_tokens"
-        private const val KEY_TODAY_INPUT_AUDIO = "today_input_audio_tokens"
-        private const val KEY_TODAY_INPUT_TEXT = "today_input_text_tokens"
-        private const val KEY_TODAY_OUTPUT_AUDIO = "today_output_audio_tokens"
-        private const val KEY_TODAY_OUTPUT_TEXT = "today_output_text_tokens"
         private const val KEY_SCHEMA_VERSION = "schema_version"
-        private const val SCHEMA_VERSION = 4
+        private const val SCHEMA_VERSION = 3
     }
 }
