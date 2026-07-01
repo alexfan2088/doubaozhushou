@@ -19,7 +19,8 @@ class AudioRouteManager(private val context: Context) {
     data class BluetoothCandidate(
         val key: String,
         val displayLabel: String,
-        val device: AudioDeviceInfo?
+        val device: AudioDeviceInfo?,
+        val bluetoothDevice: BluetoothDevice
     )
 
     data class Selection(
@@ -61,6 +62,7 @@ class AudioRouteManager(private val context: Context) {
             val selectedKey = selectedBluetoothKey()
             val candidate = bluetoothCandidates().firstOrNull { it.key == selectedKey }
             if (candidate != null) {
+                requestSelectedBluetoothAudio(candidate.bluetoothDevice)
                 val communicationDevice = candidate.device
                     ?: availableCommunicationDevices()
                         .firstOrNull(::isBluetoothCommunication)
@@ -103,7 +105,8 @@ class AudioRouteManager(private val context: Context) {
                         bluetoothDevice,
                         bluetoothDevice.address.lowercase() in connectedAddresses
                     ),
-                    device = audioDevice
+                    device = audioDevice,
+                    bluetoothDevice = bluetoothDevice
                 )
             }
             .distinctBy { it.key }
@@ -199,6 +202,19 @@ class AudioRouteManager(private val context: Context) {
         if (!audioManager.isBluetoothA2dpOn) {
             @Suppress("DEPRECATION")
             audioManager.isBluetoothA2dpOn = true
+        }
+    }
+
+    private fun requestSelectedBluetoothAudio(device: BluetoothDevice) {
+        // Do not reject devices based on app-side capability guesses. Ask Android
+        // to open audio for exactly the device selected by the user; the platform
+        // will expose whichever HFP/SCO/A2DP routes that device actually provides.
+        runCatching { headsetProxy?.startVoiceRecognition(device) }
+        runCatching {
+            @Suppress("DEPRECATION")
+            audioManager.startBluetoothSco()
+            @Suppress("DEPRECATION")
+            audioManager.isBluetoothScoOn = true
         }
     }
 

@@ -573,7 +573,6 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
                 }
             AudioRouteManager.Kind.BLUETOOTH ->
                 if (
-                    audioRouteManager.selectedBluetoothMicrophoneConnected() &&
                     selection.routeAccepted &&
                     selection.inputDevice != null
                 ) {
