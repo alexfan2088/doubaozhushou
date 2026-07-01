@@ -165,6 +165,10 @@ class VolcengineRealtimeVoiceClient(
             SpeechEngineDefines.PARAMS_KEY_RECORDER_PRESET_INT,
             SpeechEngineDefines.RECORDER_PRESET_VOICE_COMMUNICATION
         )
+        speechEngine.setOptionInt(
+            SpeechEngineDefines.PARAMS_KEY_AUDIO_STREAM_TYPE_INT,
+            SpeechEngineDefines.AUDIO_STREAM_TYPE_VOICE
+        )
         speechEngine.setOptionBoolean(
             SpeechEngineDefines.PARAMS_KEY_DIALOG_ENABLE_PLAYER_BOOL,
             true

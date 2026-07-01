@@ -38,6 +38,7 @@ class AudioRouteManager(private val context: Context) {
     private var headsetProxy: BluetoothHeadset? = null
     @Volatile
     private var a2dpProxy: BluetoothA2dp? = null
+    private var activatedCommunicationIdentity: String? = null
 
     init {
         requestProfileProxy(BluetoothProfile.HEADSET) { headsetProxy = it as? BluetoothHeadset }
@@ -50,11 +51,13 @@ class AudioRouteManager(private val context: Context) {
 
         if (usbEnabled && snapshot.ready) {
             releaseBluetoothCommunication()
+            suppressBluetoothA2dp()
             val device = availableCommunicationDevices().firstOrNull(::isUsb)
             return activate(device, Kind.USB, device?.productName?.toString() ?: "Type-C USB 音频")
         }
 
         if (bluetoothEnabled && hasBluetoothPermission()) {
+            restoreBluetoothA2dp()
             val selectedKey = selectedBluetoothKey()
             val candidate = bluetoothCandidates().firstOrNull { it.key == selectedKey }
             if (candidate != null) {
@@ -159,18 +162,43 @@ class AudioRouteManager(private val context: Context) {
 
     fun clear() {
         runCatching { audioManager.clearCommunicationDevice() }
+        activatedCommunicationIdentity = null
         releaseBluetoothCommunication()
+        restoreBluetoothA2dp()
         if (audioManager.mode == AudioManager.MODE_IN_COMMUNICATION) {
             audioManager.mode = AudioManager.MODE_NORMAL
         }
     }
 
     private fun releaseBluetoothCommunication() {
+        @Suppress("DEPRECATION")
+        if (
+            !audioManager.isBluetoothScoOn &&
+            audioManager.communicationDevice?.type != AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+        ) {
+            return
+        }
         runCatching {
             @Suppress("DEPRECATION")
             audioManager.isBluetoothScoOn = false
             @Suppress("DEPRECATION")
             audioManager.stopBluetoothSco()
+        }
+    }
+
+    private fun suppressBluetoothA2dp() {
+        @Suppress("DEPRECATION")
+        if (audioManager.isBluetoothA2dpOn) {
+            @Suppress("DEPRECATION")
+            audioManager.isBluetoothA2dpOn = false
+        }
+    }
+
+    private fun restoreBluetoothA2dp() {
+        @Suppress("DEPRECATION")
+        if (!audioManager.isBluetoothA2dpOn) {
+            @Suppress("DEPRECATION")
+            audioManager.isBluetoothA2dpOn = true
         }
     }
 
@@ -180,9 +208,13 @@ class AudioRouteManager(private val context: Context) {
         fallbackLabel: String
     ): Selection {
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-        var accepted = device != null && runCatching {
-            audioManager.setCommunicationDevice(device)
-        }.getOrDefault(false)
+        val current = audioManager.communicationDevice
+        val requestedIdentity = device?.let(::deviceIdentity)
+        var accepted = device != null && (
+            activatedCommunicationIdentity == requestedIdentity &&
+                current?.let { representsSameAudioDevice(it, device) } == true ||
+                runCatching { audioManager.setCommunicationDevice(device) }.getOrDefault(false)
+            )
         if (kind == Kind.BLUETOOTH && !accepted) {
             runCatching {
                 @Suppress("DEPRECATION")
@@ -193,6 +225,9 @@ class AudioRouteManager(private val context: Context) {
             accepted = device != null && runCatching {
                 audioManager.setCommunicationDevice(device)
             }.getOrDefault(false)
+        }
+        if (accepted) {
+            activatedCommunicationIdentity = requestedIdentity
         }
         val input = externalInputs().firstOrNull { candidate ->
             when (kind) {
