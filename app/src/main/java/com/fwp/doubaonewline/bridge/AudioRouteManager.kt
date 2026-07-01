@@ -46,7 +46,10 @@ class AudioRouteManager(private val context: Context) {
         requestProfileProxy(BluetoothProfile.A2DP) { a2dpProxy = it as? BluetoothA2dp }
     }
 
-    fun select(snapshot: AudioDeviceMonitor.Snapshot): Selection {
+    fun select(
+        snapshot: AudioDeviceMonitor.Snapshot,
+        permissiveBluetooth: Boolean = false
+    ): Selection {
         val usbEnabled = prefs.getBoolean(BridgeContract.PREF_USB_ENABLED, true)
         val bluetoothEnabled = prefs.getBoolean(BridgeContract.PREF_BLUETOOTH_ENABLED, false)
 
@@ -62,6 +65,9 @@ class AudioRouteManager(private val context: Context) {
             val selectedKey = selectedBluetoothKey()
             val candidate = bluetoothCandidates().firstOrNull { it.key == selectedKey }
             if (candidate != null) {
+                if (permissiveBluetooth) {
+                    return activatePermissiveBluetooth(candidate)
+                }
                 requestSelectedBluetoothAudio(candidate.bluetoothDevice)
                 val communicationDevice = candidate.device
                     ?: availableCommunicationDevices()
@@ -76,6 +82,24 @@ class AudioRouteManager(private val context: Context) {
 
         clear()
         return Selection(Kind.NONE, "无可用双向音频设备", false, null, null)
+    }
+
+    private fun activatePermissiveBluetooth(candidate: BluetoothCandidate): Selection {
+        val connected = selectedBluetoothConnected()
+        if (activatedCommunicationIdentity != "legacy:${candidate.key}") {
+            runCatching { audioManager.clearCommunicationDevice() }
+            releaseBluetoothCommunication()
+            restoreBluetoothA2dp()
+            activatedCommunicationIdentity = "legacy:${candidate.key}"
+        }
+        audioManager.mode = AudioManager.MODE_NORMAL
+        return Selection(
+            kind = Kind.BLUETOOTH,
+            label = candidate.displayLabel,
+            routeAccepted = connected,
+            inputDevice = null,
+            deviceKey = candidate.key
+        )
     }
 
     fun bluetoothCandidates(): List<BluetoothCandidate> {

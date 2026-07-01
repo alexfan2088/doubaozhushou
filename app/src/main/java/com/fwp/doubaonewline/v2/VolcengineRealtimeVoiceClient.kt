@@ -34,6 +34,7 @@ class VolcengineRealtimeVoiceClient(
     private var listener: RealtimeVoiceListener? = null
     private var pendingWelcomeText = ""
     private var useCustomExternalRecorder = false
+    @Volatile private var legacyBluetoothRouting = false
     @Volatile private var customRecorderRunning = false
     @Volatile private var customRecorder: AudioRecord? = null
     @Volatile private var customRecorderThread: Thread? = null
@@ -44,6 +45,10 @@ class VolcengineRealtimeVoiceClient(
 
     override fun setListener(listener: RealtimeVoiceListener?) {
         this.listener = listener
+    }
+
+    fun setLegacyBluetoothRouting(enabled: Boolean) {
+        legacyBluetoothRouting = enabled
     }
 
     @Synchronized
@@ -134,12 +139,14 @@ class VolcengineRealtimeVoiceClient(
             DIALOG_URI
         )
         @Suppress("DEPRECATION")
-        val bluetoothScoActive =
+        val bluetoothScoActive = !legacyBluetoothRouting && (
             audioManager.communicationDevice?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
                 audioManager.isBluetoothScoOn
+            )
         val communicationType = audioManager.communicationDevice?.type
         useCustomExternalRecorder =
-            bluetoothScoActive ||
+            legacyBluetoothRouting ||
+                bluetoothScoActive ||
                 communicationType == AudioDeviceInfo.TYPE_USB_DEVICE ||
                 communicationType == AudioDeviceInfo.TYPE_USB_HEADSET ||
                 communicationType == AudioDeviceInfo.TYPE_USB_ACCESSORY
@@ -161,14 +168,21 @@ class VolcengineRealtimeVoiceClient(
                 SpeechEngineDefines.RECORDER_TYPE_RECORDER
             }
         )
-        speechEngine.setOptionInt(
-            SpeechEngineDefines.PARAMS_KEY_RECORDER_PRESET_INT,
-            SpeechEngineDefines.RECORDER_PRESET_VOICE_COMMUNICATION
-        )
-        speechEngine.setOptionInt(
-            SpeechEngineDefines.PARAMS_KEY_AUDIO_STREAM_TYPE_INT,
-            SpeechEngineDefines.AUDIO_STREAM_TYPE_VOICE
-        )
+        if (legacyBluetoothRouting) {
+            speechEngine.setOptionInt(
+                SpeechEngineDefines.PARAMS_KEY_AUDIO_STREAM_TYPE_INT,
+                SpeechEngineDefines.AUDIO_STREAM_TYPE_MEDIA
+            )
+        } else {
+            speechEngine.setOptionInt(
+                SpeechEngineDefines.PARAMS_KEY_RECORDER_PRESET_INT,
+                SpeechEngineDefines.RECORDER_PRESET_VOICE_COMMUNICATION
+            )
+            speechEngine.setOptionInt(
+                SpeechEngineDefines.PARAMS_KEY_AUDIO_STREAM_TYPE_INT,
+                SpeechEngineDefines.AUDIO_STREAM_TYPE_VOICE
+            )
+        }
         speechEngine.setOptionBoolean(
             SpeechEngineDefines.PARAMS_KEY_DIALOG_ENABLE_PLAYER_BOOL,
             true
@@ -357,7 +371,10 @@ class VolcengineRealtimeVoiceClient(
         val communicationType = audioManager.communicationDevice?.type
         val input = audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
             .firstOrNull {
-                when (communicationType) {
+                when {
+                    legacyBluetoothRouting ->
+                        it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC
+                    else -> when (communicationType) {
                     AudioDeviceInfo.TYPE_USB_DEVICE,
                     AudioDeviceInfo.TYPE_USB_HEADSET,
                     AudioDeviceInfo.TYPE_USB_ACCESSORY ->
@@ -365,6 +382,7 @@ class VolcengineRealtimeVoiceClient(
                             it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
                             it.type == AudioDeviceInfo.TYPE_USB_ACCESSORY
                     else -> it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                    }
                 }
             }
             ?: return
@@ -375,7 +393,11 @@ class VolcengineRealtimeVoiceClient(
         )
         if (minimum <= 0) return
         val recorder = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+            if (legacyBluetoothRouting) {
+                MediaRecorder.AudioSource.MIC
+            } else {
+                MediaRecorder.AudioSource.VOICE_COMMUNICATION
+            },
             BLUETOOTH_SAMPLE_RATE,
             AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT,

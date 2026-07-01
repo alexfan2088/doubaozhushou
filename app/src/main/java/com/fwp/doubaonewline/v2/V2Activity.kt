@@ -263,7 +263,13 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         handler.removeCallbacks(enterLocalStandby)
         wakeWordDetector.stop()
         userRequestedStop = false
-        V2VoiceForegroundService.start(this)
+        val legacyBluetoothSession =
+            !wakeWordMode && activeRouteKind == AudioRouteManager.Kind.BLUETOOTH
+        if (legacyBluetoothSession) {
+            V2VoiceForegroundService.stop(this)
+        } else {
+            V2VoiceForegroundService.start(this)
+        }
         if (resetSession) {
             sessionTokens = 0L
             sessionInputAudioTokens = 0L
@@ -277,6 +283,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         }
         renderSessionTokens()
         setConnectingUi()
+        client.setLegacyBluetoothRouting(legacyBluetoothSession)
         coordinator.start { credentials ->
             RealtimeVoiceConfig(
                 credentials = credentials,
@@ -563,7 +570,10 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     private fun inspectAudioRoute() {
         if (!::audioMonitor.isInitialized || !::audioRouteManager.isInitialized) return
         val snapshot = audioMonitor.snapshot()
-        val selection = audioRouteManager.select(snapshot)
+        val selection = audioRouteManager.select(
+            snapshot,
+            permissiveBluetooth = !wakeWordMode
+        )
         val routeKey = when (selection.kind) {
             AudioRouteManager.Kind.USB ->
                 if (snapshot.ready && selection.routeAccepted && selection.inputDevice != null) {
@@ -572,10 +582,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
                     null
                 }
             AudioRouteManager.Kind.BLUETOOTH ->
-                if (
-                    selection.routeAccepted &&
-                    selection.inputDevice != null
-                ) {
+                if (selection.routeAccepted && (!wakeWordMode || selection.inputDevice != null)) {
                     "bluetooth:${selection.deviceKey.orEmpty()}"
                 } else {
                     null
