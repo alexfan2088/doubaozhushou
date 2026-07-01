@@ -10,7 +10,7 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:paddingLeft="20dp"
-        android:paddingTop="32dp"
+        android:paddingTop="92dp"
         android:paddingRight="20dp"
         android:paddingBottom="12dp">
 
@@ -222,17 +222,38 @@
                 android:textStyle="bold" />
         </LinearLayout>
 
-        <Button
-            android:id="@+id/switchToV2Button"
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="46dp"
+            android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:backgroundTint="@color/success"
-            android:text="切换到新版 V2"
-            android:textAllCaps="false"
-            android:textColor="#FFFFFF"
-            android:textSize="13sp"
-            android:textStyle="bold" />
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/switchToV2Button"
+                android:layout_width="0dp"
+                android:layout_height="46dp"
+                android:layout_marginRight="4dp"
+                android:layout_weight="1"
+                android:backgroundTint="@color/success"
+                android:text="V2 大模型版"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/switchToV3Button"
+                android:layout_width="0dp"
+                android:layout_height="46dp"
+                android:layout_marginLeft="4dp"
+                android:layout_weight="1"
+                android:backgroundTint="@color/success"
+                android:text="V3 唤醒词版"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
 
     </LinearLayout>
 </ScrollView>

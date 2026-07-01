@@ -79,7 +79,11 @@ class MainActivity : AppCompatActivity() {
         setupReadyGreeting()
 
         findViewById<Button>(R.id.switchToV2Button).setOnClickListener {
-            startActivity(Intent(this, V2Activity::class.java))
+            startActivity(V2Activity.createIntent(this, wakeWordMode = false))
+            finish()
+        }
+        findViewById<Button>(R.id.switchToV3Button).setOnClickListener {
+            startActivity(V2Activity.createIntent(this, wakeWordMode = true))
             finish()
         }
         findViewById<Button>(R.id.selectBluetoothButton).setOnClickListener {

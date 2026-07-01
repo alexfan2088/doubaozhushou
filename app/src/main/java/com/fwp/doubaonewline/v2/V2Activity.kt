@@ -12,6 +12,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.Typeface
 import android.hardware.usb.UsbManager
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
@@ -20,9 +22,14 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
 import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
+import android.view.View
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -39,6 +46,9 @@ import java.text.NumberFormat
 import java.util.UUID
 
 class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
+    private val wakeWordMode: Boolean
+        get() = intent?.getBooleanExtra(EXTRA_WAKE_WORD_MODE, false) == true
+
     private lateinit var statusText: TextView
     private lateinit var detailText: TextView
     private lateinit var welcomeInput: EditText
@@ -135,7 +145,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
             startSession()
         } else {
             startAfterPermission = false
-            showError("无法开始", "V2 实时语音需要麦克风权限。")
+            showError("无法开始", "$versionLabel 实时语音需要麦克风权限。")
         }
     }
 
@@ -174,11 +184,15 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         selectedBluetoothText = findViewById(R.id.v2SelectedBluetoothText)
         calibrateWakeButton = findViewById(R.id.v2CalibrateWakeButton)
         calibrationText = findViewById(R.id.v2CalibrationText)
+        configureVersionUi()
 
         getSharedPreferences(BridgeContract.PREFS, MODE_PRIVATE)
             .edit()
             .putBoolean(BridgeContract.PREF_ENABLED, false)
-            .putString(BridgeContract.PREF_MODE, BridgeContract.MODE_V2)
+            .putString(
+                BridgeContract.PREF_MODE,
+                if (wakeWordMode) BridgeContract.MODE_V3 else BridgeContract.MODE_V2
+            )
             .apply()
         stopService(Intent(this, NewlineBridgeService::class.java))
         DoubaoAccessibilityService.cancelCallStart()
@@ -219,6 +233,9 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
             endSession()
             startActivity(Intent(this, MainActivity::class.java))
             finish()
+        }
+        findViewById<Button>(R.id.switchRealtimeModeButton).setOnClickListener {
+            switchRealtimeMode()
         }
         registerConnectionReceiver()
         audioMonitor.start()
@@ -273,12 +290,17 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
             )
         }.onFailure {
             cloudSessionActive = false
-            showError("V2 连接失败", it.message ?: it.javaClass.simpleName)
-            handler.postDelayed({ startWakeWordStandby() }, AUDIO_HANDOFF_DELAY_MS)
+            showError("$versionLabel 连接失败", it.message ?: it.javaClass.simpleName)
+            if (wakeWordMode) {
+                handler.postDelayed({ startWakeWordStandby() }, AUDIO_HANDOFF_DELAY_MS)
+            } else if (!userRequestedStop && activeRouteKey != null) {
+                handler.postDelayed(reconnectSession, RECONNECT_DELAY_MS)
+            }
         }
     }
 
     private fun scheduleLocalStandby() {
+        if (!wakeWordMode) return
         handler.removeCallbacks(enterLocalStandby)
         if (!userRequestedStop && cloudSessionActive) {
             handler.postDelayed(enterLocalStandby, CLOUD_IDLE_TIMEOUT_MS)
@@ -286,6 +308,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     }
 
     private fun startWakeWordStandby() {
+        if (!wakeWordMode) return
         val input = activeInputDevice
         val deviceKey = activeWakeDeviceKey
         if (
@@ -377,7 +400,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     }
 
     private fun handleWakeWord(keyword: String) {
-        if (userRequestedStop || activeRouteKey == null || cloudSessionActive) return
+        if (!wakeWordMode || userRequestedStop || activeRouteKey == null || cloudSessionActive) return
         showActiveUi("已听到“$keyword”", "正在重新连接豆包，请听到提示后说话。")
         playWakeTone()
         handler.postDelayed(
@@ -418,7 +441,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         val selectedKey = audioRouteManager.selectedBluetoothKey()
         val ordered = candidates.sortedByDescending { it.key == selectedKey }
         val labels = ordered.map {
-            if (it.key == selectedKey) "${it.displayLabel}（已选择）" else it.displayLabel
+            if (it.key == selectedKey) selectedBluetoothListLabel(it.displayLabel) else it.displayLabel
         }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle("选择蓝牙通话设备")
@@ -430,6 +453,36 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
             }
             .setNegativeButton("取消", null)
             .show()
+    }
+
+    private fun selectedBluetoothListLabel(deviceLabel: String): CharSequence {
+        val selectedText = "  已选择"
+        return SpannableString(deviceLabel + selectedText).apply {
+            setSpan(
+                ForegroundColorSpan(Color.rgb(21, 101, 192)),
+                0,
+                deviceLabel.length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+            setSpan(
+                StyleSpan(Typeface.BOLD),
+                0,
+                deviceLabel.length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+            setSpan(
+                ForegroundColorSpan(Color.rgb(211, 47, 47)),
+                deviceLabel.length,
+                length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+            setSpan(
+                StyleSpan(Typeface.BOLD),
+                deviceLabel.length,
+                length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+        }
     }
 
     private fun updateSelectedBluetoothText() {
@@ -467,6 +520,33 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         userRequestedStop = false
         startSession(resetSession = false, announceWelcome = false)
     }
+
+    private fun switchRealtimeMode() {
+        val targetWakeWordMode = !wakeWordMode
+        endSession()
+        startActivity(createIntent(this, targetWakeWordMode))
+        finish()
+    }
+
+    private fun configureVersionUi() {
+        val title = findViewById<TextView>(R.id.v2TitleText)
+        val subtitle = findViewById<TextView>(R.id.v2SubtitleText)
+        val statusLabel = findViewById<TextView>(R.id.v2StatusLabelText)
+        val switchButton = findViewById<Button>(R.id.switchRealtimeModeButton)
+        title.text = if (wakeWordMode) "豆包助手 V3" else "豆包助手 V2"
+        subtitle.text = if (wakeWordMode) {
+            "本地“豆包豆包”唤醒 · 端到端实时语音"
+        } else {
+            "无需唤醒词 · 直接使用端到端实时语音"
+        }
+        statusLabel.text = if (wakeWordMode) "V3 会话状态" else "V2 会话状态"
+        switchButton.text = if (wakeWordMode) "V2 大模型版" else "V3 唤醒词版"
+        calibrateWakeButton.visibility = if (wakeWordMode) View.VISIBLE else View.GONE
+        calibrationText.visibility = if (wakeWordMode) View.VISIBLE else View.GONE
+    }
+
+    private val versionLabel: String
+        get() = if (wakeWordMode) "V3" else "V2"
 
     private fun endSession() {
         manuallyPaused = false
@@ -543,7 +623,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
             if (manuallyPaused) {
                 showPausedUi()
             } else {
-                detailText.text = "正在自动启动 V2 实时语音…"
+                detailText.text = "正在自动启动 $versionLabel 实时语音…"
                 if (selection.kind == AudioRouteManager.Kind.BLUETOOTH) {
                     handler.postDelayed(
                         {
@@ -600,11 +680,11 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
                     }
                     val connectionDetail = when (activeRouteKind) {
                         AudioRouteManager.Kind.BLUETOOTH ->
-                            "V2 已蓝牙连接 $activeRouteLabel，可以直接说话。"
+                            "$versionLabel 已蓝牙连接 $activeRouteLabel，可以直接说话。"
                         AudioRouteManager.Kind.USB ->
-                            "V2 已通过数据线连接，可以直接说话。"
+                            "$versionLabel 已通过数据线连接，可以直接说话。"
                         AudioRouteManager.Kind.NONE ->
-                            "V2 已连接，可以直接说话。"
+                            "$versionLabel 已连接，可以直接说话。"
                     }
                     showActiveUi("正在聆听", connectionDetail)
                     scheduleLocalStandby()
@@ -637,7 +717,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
                     } else {
                         finishSessionDuration()
                         V2VoiceForegroundService.stop(this)
-                        showError("V2 服务错误", "${event.code}: ${event.message}")
+                        showError("$versionLabel 服务错误", "${event.code}: ${event.message}")
                     }
                 }
                 is RealtimeVoiceEvent.ModelAudio -> Unit
@@ -656,7 +736,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     }
 
     private fun setConnectingUi() {
-        statusText.text = "正在连接 V2"
+        statusText.text = "正在连接 $versionLabel"
         detailText.text = "正在初始化端到端实时语音 SDK…"
         stopButton.text = "暂停语音会话"
         stopButton.isEnabled = true
@@ -684,7 +764,8 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
 
     private fun showWaitingForDevice() {
         statusText.text = "等待设备连接"
-        detailText.text = "连接 Type-C 或已选择的蓝牙通话设备后，将自动开始 V2 实时语音。"
+        detailText.text =
+            "连接 Type-C 或已选择的蓝牙通话设备后，将自动开始 $versionLabel 实时语音。"
         stopButton.text = if (manuallyPaused) "恢复语音会话" else "暂停语音会话"
         stopButton.isEnabled = false
     }
@@ -788,6 +869,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     }
 
     companion object {
+        private const val EXTRA_WAKE_WORD_MODE = "wake_word_mode"
         private const val PREFS = "v2_voice"
         private const val KEY_USER_ID = "user_id"
         private const val ROUTE_CHECK_INTERVAL_MS = 2_000L
@@ -800,6 +882,10 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         private const val WAKE_CONNECT_DELAY_MS = 350L
         private val PCM_16K_MONO = AudioFormatSpec(16_000, 1, 16, "pcm")
         private val PCM_24K_MONO = AudioFormatSpec(24_000, 1, 16, "pcm")
+
+        fun createIntent(context: Context, wakeWordMode: Boolean): Intent =
+            Intent(context, V2Activity::class.java)
+                .putExtra(EXTRA_WAKE_WORD_MODE, wakeWordMode)
 
         private fun formatMinutes(durationMs: Long): String =
             "%.1f".format(durationMs / 60_000.0)
