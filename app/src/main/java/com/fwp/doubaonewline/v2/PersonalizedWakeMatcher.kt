@@ -67,15 +67,29 @@ object PersonalizedWakeMatcher {
     }
 
     fun nearest(candidate: WakeTemplate, templates: List<WakeTemplate>): Float =
-        templates.minOfOrNull { distance(candidate, it) } ?: Float.MAX_VALUE
+        templates
+            .filter { template ->
+                val ratio = candidate.frames.toFloat() / template.frames
+                ratio in 0.65f..1.55f
+            }
+            .minOfOrNull { distance(candidate, it) } ?: Float.MAX_VALUE
+
+    fun stableTemplates(templates: List<WakeTemplate>): List<WakeTemplate> {
+        if (templates.size < 4) return templates
+        val medianFrames = templates.map { it.frames }.sorted()[templates.size / 2]
+        return templates.filter {
+            val ratio = it.frames.toFloat() / medianFrames
+            ratio in 0.72f..1.38f
+        }
+    }
 
     fun calibrationThreshold(templates: List<WakeTemplate>): Float {
         if (templates.size < 3) return 0f
         val nearest = templates.mapIndexed { index, template ->
             nearest(template, templates.filterIndexed { other, _ -> other != index })
         }.sorted()
-        val representative = nearest[(nearest.size * 8 / 10).coerceAtMost(nearest.lastIndex)]
-        return (representative * 1.35f + 0.03f).coerceIn(0.16f, 0.42f)
+        val representative = nearest[nearest.size / 2]
+        return (representative * 1.35f + 0.03f).coerceIn(0.24f, 0.38f)
     }
 
     private fun cosineDistance(

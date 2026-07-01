@@ -45,13 +45,14 @@ class OfflineWakeWordDetector(
     @Synchronized
     fun calibrate(
         device: AudioDeviceInfo,
+        onReady: () -> Unit,
         onProgress: (Int) -> Unit,
         onComplete: (WakeCalibrationProfile) -> Unit
     ): Boolean {
         if (running || !hasPermission()) return false
         running = true
         worker = thread(name = "wake-calibration", isDaemon = true) {
-            runCalibration(device, onProgress, onComplete)
+            runCalibration(device, onReady, onProgress, onComplete)
         }
         return true
     }
@@ -92,7 +93,7 @@ class OfflineWakeWordDetector(
                     lastLevelLogAt = now
                 }
                 if (profile.templates.isNotEmpty()) {
-                    val speechGate = maxOf(adaptiveNoise * 2.4, 100.0)
+                    val speechGate = maxOf(adaptiveNoise * 1.8, 70.0)
                     if (!personalizedSpeech) {
                         preRoll.addLast(buffer.copyOf(count))
                         while (preRoll.size > PRE_ROLL_FRAMES) preRoll.removeFirst()
@@ -178,6 +179,7 @@ class OfflineWakeWordDetector(
 
     private fun runCalibration(
         device: AudioDeviceInfo,
+        onReady: () -> Unit,
         onProgress: (Int) -> Unit,
         onComplete: (WakeCalibrationProfile) -> Unit
     ) {
@@ -193,6 +195,7 @@ class OfflineWakeWordDetector(
             var inSpeech = false
             var eventPeak = 0.0
             var silenceFrames = 0
+            var acceptSpeechAfterMs = 0L
             val deadline = SystemClock.elapsedRealtime() + CALIBRATION_TIMEOUT_MS
 
             while (running && templates.size < CALIBRATION_UTTERANCES &&
@@ -204,6 +207,14 @@ class OfflineWakeWordDetector(
                 if (noiseSamples.size < NOISE_FRAMES) {
                     noiseSamples += level
                     noiseRms = noiseSamples.sorted()[noiseSamples.size / 2]
+                    if (noiseSamples.size == NOISE_FRAMES) {
+                        acceptSpeechAfterMs =
+                            SystemClock.elapsedRealtime() + CALIBRATION_TONE_GUARD_MS
+                        onReady()
+                    }
+                    continue
+                }
+                if (SystemClock.elapsedRealtime() < acceptSpeechAfterMs) {
                     continue
                 }
                 val speechGate = maxOf(noiseRms * 3.2, 120.0)
@@ -245,13 +256,18 @@ class OfflineWakeWordDetector(
             }
             val medianSpeech = speechSamples.sorted()[speechSamples.size / 2]
             val gain = (TARGET_SPEECH_RMS / medianSpeech).toFloat().coerceIn(1f, MAX_GAIN)
+            val stableTemplates = PersonalizedWakeMatcher.stableTemplates(templates)
+            check(stableTemplates.size >= 6) {
+                "有效标定样本不足，请保持相同距离和语速重新标定"
+            }
             val profile = WakeCalibrationProfile(
                 gain = gain,
                 noiseRms = noiseRms.toFloat(),
                 keywordThreshold = WakeCalibrationStore.DEFAULT_THRESHOLD,
                 calibratedAtMs = System.currentTimeMillis(),
-                templates = templates,
-                templateThreshold = PersonalizedWakeMatcher.calibrationThreshold(templates)
+                templates = stableTemplates,
+                templateThreshold =
+                    PersonalizedWakeMatcher.calibrationThreshold(stableTemplates)
             )
             running = false
             onComplete(profile)
@@ -361,6 +377,7 @@ class OfflineWakeWordDetector(
         private const val STOP_JOIN_TIMEOUT_MS = 1_500L
         private const val CALIBRATION_UTTERANCES = 10
         private const val CALIBRATION_TIMEOUT_MS = 90_000L
+        private const val CALIBRATION_TONE_GUARD_MS = 700L
         private const val NOISE_FRAMES = 20
         private const val END_SILENCE_FRAMES = 5
         private const val PRE_ROLL_FRAMES = 2

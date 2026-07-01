@@ -319,6 +319,13 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         handler.postDelayed({
             val started = wakeWordDetector.calibrate(
                 input,
+                onReady = {
+                    runOnUiThread {
+                        playCalibrationTone()
+                        statusText.text = "正在标定：0/10"
+                        detailText.text = "听到提示音后，请说第1次“豆包豆包”。"
+                    }
+                },
                 onProgress = { count ->
                     runOnUiThread {
                         statusText.text = "正在标定：$count/10"
@@ -359,6 +366,12 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
             else -> wakeCalibrationStore.describe(key) ?: "当前设备尚未标定，将使用通用参数"
         }
         calibrateWakeButton.isEnabled = key != null && !calibratingWake
+    }
+
+    private fun playCalibrationTone() {
+        val tone = ToneGenerator(AudioManager.STREAM_NOTIFICATION, 80)
+        tone.startTone(ToneGenerator.TONE_PROP_BEEP, 220)
+        handler.postDelayed({ tone.release() }, 350L)
     }
 
     private fun handleWakeWord(keyword: String) {

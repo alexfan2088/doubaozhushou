@@ -23,14 +23,22 @@ class WakeCalibrationStore(context: Context) {
     fun load(deviceKey: String): WakeCalibrationProfile? {
         val prefix = prefix(deviceKey)
         if (!prefs.contains("${prefix}gain")) return null
+        val templates = PersonalizedWakeMatcher.stableTemplates(
+            decodeTemplates(prefs.getString("${prefix}templates", null))
+        )
+        val recalculatedThreshold = if (templates.size >= 3) {
+            PersonalizedWakeMatcher.calibrationThreshold(templates)
+        } else {
+            0f
+        }
         return WakeCalibrationProfile(
             gain = prefs.getFloat("${prefix}gain", 1f),
             noiseRms = prefs.getFloat("${prefix}noise", 0f),
             keywordThreshold = prefs.getFloat("${prefix}threshold", DEFAULT_THRESHOLD)
                 .coerceAtMost(DEFAULT_THRESHOLD),
             calibratedAtMs = prefs.getLong("${prefix}at", 0L),
-            templates = decodeTemplates(prefs.getString("${prefix}templates", null)),
-            templateThreshold = prefs.getFloat("${prefix}template_threshold", 0f)
+            templates = templates,
+            templateThreshold = recalculatedThreshold
         )
     }
 
