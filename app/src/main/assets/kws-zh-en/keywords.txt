@@ -1,0 +1,4 @@
+d òu b āo d òu b āo :6.0 #0.02 @豆包豆包
+d uì b a d uì b a :5.0 #0.04 @豆包豆包A
+d ǒng m a d ǒng m a :5.0 #0.04 @豆包豆包B
+d uì b a z ǒu b a :5.0 #0.04 @豆包豆包C

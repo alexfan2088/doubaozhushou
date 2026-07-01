@@ -86,6 +86,27 @@
             android:textColor="@color/muted"
             android:textSize="11sp" />
 
+        <Button
+            android:id="@+id/v2CalibrateWakeButton"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:layout_marginTop="10dp"
+            android:backgroundTint="#2E7D32"
+            android:text="标定“豆包豆包”唤醒（10次）"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/v2CalibrationText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:gravity="center"
+            android:text="连接外接麦克风后可标定"
+            android:textColor="@color/muted"
+            android:textSize="11sp" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

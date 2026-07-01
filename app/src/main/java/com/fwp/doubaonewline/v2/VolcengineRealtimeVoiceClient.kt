@@ -201,7 +201,15 @@ class VolcengineRealtimeVoiceClient(
                 state = RealtimeVoiceState.MODEL_SPEAKING
                 listener?.onEvent(RealtimeVoiceEvent.ModelResponseStarted)
             }
+            SpeechEngineDefines.MESSAGE_TYPE_PLAYER_START_PLAY_AUDIO -> {
+                state = RealtimeVoiceState.MODEL_SPEAKING
+                listener?.onEvent(RealtimeVoiceEvent.ModelResponseStarted)
+            }
             SpeechEngineDefines.MESSAGE_TYPE_EVENT_CHAT_ENDED -> {
+                state = RealtimeVoiceState.LISTENING
+                listener?.onEvent(RealtimeVoiceEvent.ModelResponseEnded)
+            }
+            SpeechEngineDefines.MESSAGE_TYPE_PLAYER_FINISH_PLAY_AUDIO -> {
                 state = RealtimeVoiceState.LISTENING
                 listener?.onEvent(RealtimeVoiceEvent.ModelResponseEnded)
             }
@@ -215,10 +223,14 @@ class VolcengineRealtimeVoiceClient(
 
     private fun parseUsage(payload: String): RealtimeVoiceEvent.Usage? = runCatching {
         val root = JSONObject(payload)
-        val splitInput = findLong(root, setOf("input_audio_tokens")) +
-            findLong(root, setOf("input_text_tokens"))
-        val splitOutput = findLong(root, setOf("output_audio_tokens")) +
-            findLong(root, setOf("output_text_tokens"))
+        val inputAudio = findLong(root, setOf("input_audio_tokens")) +
+            findLong(root, setOf("cached_audio_tokens"))
+        val inputText = findLong(root, setOf("input_text_tokens")) +
+            findLong(root, setOf("cached_text_tokens"))
+        val outputAudio = findLong(root, setOf("output_audio_tokens"))
+        val outputText = findLong(root, setOf("output_text_tokens"))
+        val splitInput = inputAudio + inputText
+        val splitOutput = outputAudio + outputText
         val genericInput = findLong(
             root,
             setOf(
@@ -243,8 +255,11 @@ class VolcengineRealtimeVoiceClient(
         val output = if (splitOutput > 0L) splitOutput else genericOutput
         val total = findLong(root, setOf("total_tokens", "total_token", "totaltokens"))
         when {
-            input > 0L || output > 0L -> RealtimeVoiceEvent.Usage(input, output)
-            total > 0L -> RealtimeVoiceEvent.Usage(total, 0L)
+            splitInput > 0L || splitOutput > 0L ->
+                RealtimeVoiceEvent.Usage(inputAudio, inputText, outputAudio, outputText)
+            input > 0L || output > 0L ->
+                RealtimeVoiceEvent.Usage(input, 0L, output, 0L)
+            total > 0L -> RealtimeVoiceEvent.Usage(total, 0L, 0L, 0L)
             else -> null
         }
     }.getOrNull()

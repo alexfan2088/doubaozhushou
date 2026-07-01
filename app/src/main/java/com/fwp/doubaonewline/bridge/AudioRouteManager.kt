@@ -25,7 +25,9 @@ class AudioRouteManager(private val context: Context) {
     data class Selection(
         val kind: Kind,
         val label: String,
-        val routeAccepted: Boolean
+        val routeAccepted: Boolean,
+        val inputDevice: AudioDeviceInfo?,
+        val deviceKey: String?
     )
 
     private val audioManager = context.getSystemService(AudioManager::class.java)
@@ -60,7 +62,7 @@ class AudioRouteManager(private val context: Context) {
         }
 
         clear()
-        return Selection(Kind.NONE, "无可用双向音频设备", false)
+        return Selection(Kind.NONE, "无可用双向音频设备", false, null, null)
     }
 
     fun bluetoothCandidates(): List<BluetoothCandidate> {
@@ -153,11 +155,34 @@ class AudioRouteManager(private val context: Context) {
         val accepted = device != null && runCatching {
             audioManager.setCommunicationDevice(device)
         }.getOrDefault(false)
-        return Selection(kind, device?.productName?.toString() ?: fallbackLabel, accepted)
+        val input = externalInputs().firstOrNull { candidate ->
+            when (kind) {
+                Kind.USB -> isUsb(candidate)
+                Kind.BLUETOOTH ->
+                    isBluetoothCommunication(candidate) &&
+                        (
+                            device == null ||
+                                representsSameAudioDevice(candidate, device)
+                            )
+                Kind.NONE -> false
+            }
+        }
+        val key = input?.let(::deviceIdentity)
+        return Selection(
+            kind,
+            input?.productName?.toString() ?: device?.productName?.toString() ?: fallbackLabel,
+            accepted && input != null,
+            input,
+            key
+        )
     }
 
     private fun availableCommunicationDevices(): List<AudioDeviceInfo> =
         runCatching { audioManager.availableCommunicationDevices }.getOrDefault(emptyList())
+
+    private fun externalInputs(): List<AudioDeviceInfo> =
+        audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
+            .filter { isUsb(it) || isBluetoothCommunication(it) }
 
     private fun hasBluetoothPermission(): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) ==
@@ -230,6 +255,17 @@ class AudioRouteManager(private val context: Context) {
 
     private fun deviceIdentity(device: AudioDeviceInfo): String =
         "${device.type}|${device.address}|${device.productName}"
+
+    private fun representsSameAudioDevice(
+        first: AudioDeviceInfo,
+        second: AudioDeviceInfo
+    ): Boolean {
+        if (first.address.isNotBlank() && second.address.isNotBlank()) {
+            return first.address.equals(second.address, ignoreCase = true)
+        }
+        return first.productName.toString()
+            .equals(second.productName.toString(), ignoreCase = true)
+    }
 
     private fun stableKey(device: AudioDeviceInfo): String = deviceIdentity(device)
 
