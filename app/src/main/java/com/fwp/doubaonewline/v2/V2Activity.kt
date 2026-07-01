@@ -17,6 +17,7 @@ import android.graphics.Typeface
 import android.hardware.usb.UsbManager
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -28,6 +29,7 @@ import android.text.style.StyleSpan
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.SeekBar
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -55,6 +57,8 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     private lateinit var estimatedCostText: TextView
     private lateinit var selectedBluetoothText: TextView
     private lateinit var localWakeCheck: CheckBox
+    private lateinit var wakeSensitivityText: TextView
+    private lateinit var wakeSensitivitySeek: SeekBar
 
     private lateinit var client: VolcengineRealtimeVoiceClient
     private lateinit var coordinator: V2SessionCoordinator
@@ -103,13 +107,26 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         }
     }
 
-    private val reconnectSession = Runnable {
+    private val reconnectSession: Runnable = Runnable {
+        tryReconnectSession()
+    }
+
+    private fun tryReconnectSession() {
         if (
             !userRequestedStop &&
             activeRouteKey != null &&
-            coordinator.state == RealtimeVoiceState.IDLE
+            !manuallyPaused
         ) {
-            startSession(resetSession = false, announceWelcome = false)
+            if (isPhoneCallActive()) {
+                statusText.text = "通话中"
+                detailText.text = "电话结束后将自动恢复 V2 语音会话。"
+                handler.postDelayed(reconnectSession, RECONNECT_DELAY_MS)
+            } else {
+                if (coordinator.state != RealtimeVoiceState.IDLE) {
+                    coordinator.stop(DisconnectReason.SERVICE_ERROR)
+                }
+                startSession(resetSession = false, announceWelcome = false)
+            }
         }
     }
 
@@ -186,6 +203,8 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         estimatedCostText = findViewById(R.id.v2EstimatedCostText)
         selectedBluetoothText = findViewById(R.id.v2SelectedBluetoothText)
         localWakeCheck = findViewById(R.id.v2LocalWakeCheck)
+        wakeSensitivityText = findViewById(R.id.v2WakeSensitivityText)
+        wakeSensitivitySeek = findViewById(R.id.v2WakeSensitivitySeek)
 
         getSharedPreferences(BridgeContract.PREFS, MODE_PRIVATE)
             .edit()
@@ -208,13 +227,14 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
                         !manuallyPaused &&
                         activeRouteKey != null
                     ) {
+                        playWakeConfirmationTone()
                         statusText.text = "已听到豆包豆包"
                         detailText.text = "正在连接云端语音模型…"
                         handler.postDelayed(
                             {
                                 startSession(
                                     resetSession = false,
-                                    announceWelcome = false
+                                    announceWelcome = true
                                 )
                             },
                             WAKE_CONNECT_DELAY_MS
@@ -232,11 +252,53 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         renderUsage(usageTracker.snapshot())
         renderSessionTokens()
         updateSelectedBluetoothText()
-        localWakeCheck.isChecked = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val voicePrefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        localWakeCheck.isChecked = voicePrefs
             .getBoolean(KEY_LOCAL_WAKE_ENABLED, false)
+        val initialSensitivity = voicePrefs
+            .getInt(KEY_WAKE_SENSITIVITY, DEFAULT_WAKE_SENSITIVITY)
+            .coerceIn(MIN_WAKE_SENSITIVITY, MAX_WAKE_SENSITIVITY)
+        wakeSensitivitySeek.progress = initialSensitivity
+        renderWakeSensitivity(initialSensitivity)
+        wakeSensitivitySeek.setOnSeekBarChangeListener(
+            object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(
+                    seekBar: SeekBar?,
+                    progress: Int,
+                    fromUser: Boolean
+                ) {
+                    val sensitivity = progress.coerceIn(
+                        MIN_WAKE_SENSITIVITY,
+                        MAX_WAKE_SENSITIVITY
+                    )
+                    renderWakeSensitivity(sensitivity)
+                    if (fromUser) {
+                        voicePrefs.edit()
+                            .putInt(KEY_WAKE_SENSITIVITY, sensitivity)
+                            .apply()
+                    }
+                }
+
+                override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    if (
+                        localWakeCheck.isChecked &&
+                        !cloudSessionActive &&
+                        !manuallyPaused &&
+                        activeRouteKey != null
+                    ) {
+                        wakeWordDetector.stop()
+                        handler.postDelayed(
+                            { startLocalWakeListening() },
+                            AUDIO_HANDOFF_DELAY_MS
+                        )
+                    }
+                }
+            }
+        )
         localWakeCheck.setOnCheckedChangeListener { _, checked ->
-            getSharedPreferences(PREFS, MODE_PRIVATE)
-                .edit()
+            voicePrefs.edit()
                 .putBoolean(KEY_LOCAL_WAKE_ENABLED, checked)
                 .apply()
             handler.removeCallbacks(enterLocalWakeStandby)
@@ -317,8 +379,32 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         }.onFailure {
             cloudSessionActive = false
             finishSessionDuration()
-            showError("V2 连接失败", it.message ?: it.javaClass.simpleName)
+            coordinator.stop(DisconnectReason.SERVICE_ERROR)
+            scheduleReconnect(it.message ?: it.javaClass.simpleName)
         }
+    }
+
+    private fun scheduleReconnect(reason: String) {
+        if (userRequestedStop || manuallyPaused || activeRouteKey == null) {
+            showError("V2 连接失败", reason)
+            return
+        }
+        statusText.text = if (isPhoneCallActive()) "通话中" else "V2 连接失败，正在重试"
+        detailText.text = if (isPhoneCallActive()) {
+            "电话结束后将自动恢复 V2 语音会话。"
+        } else {
+            "$reason\n将在 ${RECONNECT_DELAY_MS / 1_000} 秒后自动重试。"
+        }
+        stopButton.text = "暂停语音会话"
+        stopButton.isEnabled = true
+        handler.removeCallbacks(reconnectSession)
+        handler.postDelayed(reconnectSession, RECONNECT_DELAY_MS)
+    }
+
+    private fun isPhoneCallActive(): Boolean {
+        val mode = getSystemService(AudioManager::class.java).mode
+        return mode == AudioManager.MODE_IN_CALL ||
+            mode == AudioManager.MODE_RINGTONE
     }
 
     private fun scheduleLocalWakeStandby() {
@@ -333,9 +419,42 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
             showError("本地唤醒不可用", "没有找到可用麦克风。")
             return
         }
-        if (!wakeWordDetector.start(input, WakeCalibrationStore.DEFAULT_PROFILE)) {
+        if (!wakeWordDetector.start(input, currentWakeProfile())) {
             showError("本地唤醒不可用", "缺少麦克风权限。")
         }
+    }
+
+    private fun currentWakeProfile(): WakeCalibrationProfile {
+        val sensitivity = wakeSensitivitySeek.progress.coerceIn(
+            MIN_WAKE_SENSITIVITY,
+            MAX_WAKE_SENSITIVITY
+        )
+        return WakeCalibrationStore.DEFAULT_PROFILE.copy(
+            keywordThreshold = when (sensitivity) {
+                1 -> 0.28f
+                2 -> 0.20f
+                3 -> 0.12f
+                4 -> 0.08f
+                else -> 0.045f
+            }
+        )
+    }
+
+    private fun renderWakeSensitivity(sensitivity: Int) {
+        val description = when (sensitivity) {
+            1 -> "保守 · 最低误唤醒"
+            2 -> "较低 · 偏重准确性"
+            3 -> "均衡（推荐）"
+            4 -> "较高 · 更容易唤醒"
+            else -> "高灵敏 · 误唤醒较多"
+        }
+        wakeSensitivityText.text = "唤醒灵敏度：$sensitivity · $description"
+    }
+
+    private fun playWakeConfirmationTone() {
+        val tone = ToneGenerator(AudioManager.STREAM_MUSIC, 80)
+        tone.startTone(ToneGenerator.TONE_PROP_ACK, 180)
+        handler.postDelayed({ tone.release() }, 300L)
     }
 
     private fun selectWakeInput(
@@ -611,11 +730,8 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
                     cloudSessionActive = false
                     handler.removeCallbacks(enterLocalWakeStandby)
                     coordinator.stop(DisconnectReason.SERVICE_ERROR)
-                    if (event.retryable && !userRequestedStop && activeRouteKey != null) {
-                        statusText.text = "连接中断，正在恢复"
-                        detailText.text = "${event.code}: ${event.message}"
-                        handler.removeCallbacks(reconnectSession)
-                        handler.postDelayed(reconnectSession, RECONNECT_DELAY_MS)
+                    if (!userRequestedStop && activeRouteKey != null) {
+                        scheduleReconnect("${event.code}: ${event.message}")
                     } else {
                         finishSessionDuration()
                         V2VoiceForegroundService.stop(this)
@@ -779,6 +895,10 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         private const val WAKE_CONNECT_DELAY_MS = 350L
         private const val BUSY_RECHECK_DELAY_MS = 1_000L
         private const val KEY_LOCAL_WAKE_ENABLED = "local_wake_enabled"
+        private const val KEY_WAKE_SENSITIVITY = "wake_sensitivity"
+        private const val DEFAULT_WAKE_SENSITIVITY = 3
+        private const val MIN_WAKE_SENSITIVITY = 1
+        private const val MAX_WAKE_SENSITIVITY = 5
         private val PCM_16K_MONO = AudioFormatSpec(16_000, 1, 16, "pcm")
         private val PCM_24K_MONO = AudioFormatSpec(24_000, 1, 16, "pcm")
 
