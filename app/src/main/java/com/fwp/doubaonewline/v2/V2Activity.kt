@@ -63,6 +63,8 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     private var activeRouteKey: String? = null
     private var activeInputDevice: AudioDeviceInfo? = null
     private var activeWakeDeviceKey: String? = null
+    private var activeRouteKind = AudioRouteManager.Kind.NONE
+    private var activeRouteLabel = ""
     private var sessionTokens = 0L
     private var sessionInputAudioTokens = 0L
     private var sessionInputTextTokens = 0L
@@ -491,7 +493,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
                 }
             AudioRouteManager.Kind.BLUETOOTH ->
                 if (
-                    audioRouteManager.selectedBluetoothConnected() &&
+                    audioRouteManager.selectedBluetoothMicrophoneConnected() &&
                     selection.routeAccepted &&
                     selection.inputDevice != null
                 ) {
@@ -512,6 +514,8 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
             activeRouteKey = null
             activeInputDevice = null
             activeWakeDeviceKey = null
+            activeRouteKind = AudioRouteManager.Kind.NONE
+            activeRouteLabel = ""
             updateCalibrationText()
             if (hadRoute && coordinator.state != RealtimeVoiceState.IDLE) {
                 finishSessionDuration()
@@ -532,13 +536,30 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
             activeRouteKey = routeKey
             activeInputDevice = selection.inputDevice
             activeWakeDeviceKey = selection.deviceKey
+            activeRouteKind = selection.kind
+            activeRouteLabel = selection.label.substringBefore("（")
             updateCalibrationText()
             statusText.text = "检测到${selection.label}"
             if (manuallyPaused) {
                 showPausedUi()
             } else {
                 detailText.text = "正在自动启动 V2 实时语音…"
-                ensurePermissionAndStart()
+                if (selection.kind == AudioRouteManager.Kind.BLUETOOTH) {
+                    handler.postDelayed(
+                        {
+                            if (
+                                activeRouteKey == routeKey &&
+                                !manuallyPaused &&
+                                coordinator.state == RealtimeVoiceState.IDLE
+                            ) {
+                                ensurePermissionAndStart()
+                            }
+                        },
+                        BLUETOOTH_ROUTE_SETTLE_MS
+                    )
+                } else {
+                    ensurePermissionAndStart()
+                }
             }
         }
     }
@@ -577,7 +598,15 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
                         sessionStartedAtMs = now
                         lastDurationCheckpointAtMs = now
                     }
-                    showActiveUi("正在聆听", "V2 已连接，可以直接说话。")
+                    val connectionDetail = when (activeRouteKind) {
+                        AudioRouteManager.Kind.BLUETOOTH ->
+                            "V2 已蓝牙连接 $activeRouteLabel，可以直接说话。"
+                        AudioRouteManager.Kind.USB ->
+                            "V2 已通过数据线连接，可以直接说话。"
+                        AudioRouteManager.Kind.NONE ->
+                            "V2 已连接，可以直接说话。"
+                    }
+                    showActiveUi("正在聆听", connectionDetail)
                     scheduleLocalStandby()
                 }
                 RealtimeVoiceEvent.UserSpeechStarted -> {
@@ -767,6 +796,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         private const val RECONNECT_DELAY_MS = 3_000L
         private const val CLOUD_IDLE_TIMEOUT_MS = 30_000L
         private const val AUDIO_HANDOFF_DELAY_MS = 600L
+        private const val BLUETOOTH_ROUTE_SETTLE_MS = 2_000L
         private const val WAKE_CONNECT_DELAY_MS = 350L
         private val PCM_16K_MONO = AudioFormatSpec(16_000, 1, 16, "pcm")
         private val PCM_24K_MONO = AudioFormatSpec(24_000, 1, 16, "pcm")

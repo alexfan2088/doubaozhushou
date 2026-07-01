@@ -49,6 +49,7 @@ class AudioRouteManager(private val context: Context) {
         val bluetoothEnabled = prefs.getBoolean(BridgeContract.PREF_BLUETOOTH_ENABLED, false)
 
         if (usbEnabled && snapshot.ready) {
+            releaseBluetoothCommunication()
             val device = availableCommunicationDevices().firstOrNull(::isUsb)
             return activate(device, Kind.USB, device?.productName?.toString() ?: "Type-C USB 音频")
         }
@@ -57,7 +58,14 @@ class AudioRouteManager(private val context: Context) {
             val selectedKey = selectedBluetoothKey()
             val candidate = bluetoothCandidates().firstOrNull { it.key == selectedKey }
             if (candidate != null) {
-                return activate(candidate.device, Kind.BLUETOOTH, candidate.displayLabel)
+                val communicationDevice = candidate.device
+                    ?: availableCommunicationDevices()
+                        .firstOrNull(::isBluetoothCommunication)
+                return activate(
+                    communicationDevice,
+                    Kind.BLUETOOTH,
+                    candidate.displayLabel
+                )
             }
         }
 
@@ -130,6 +138,16 @@ class AudioRouteManager(private val context: Context) {
         return address.isNotEmpty() && address in connectedBluetoothAddresses()
     }
 
+    fun selectedBluetoothMicrophoneConnected(): Boolean {
+        val key = selectedBluetoothKey() ?: return false
+        val address = key.substringBefore('|').trim().lowercase()
+        if (address.isEmpty()) return false
+        return runCatching {
+            headsetProxy?.connectedDevices.orEmpty()
+                .any { it.address.equals(address, ignoreCase = true) }
+        }.getOrDefault(false)
+    }
+
     fun selectedBluetoothName(): String? {
         val record = bluetoothSelectionStore.load()
         val key = selectedBluetoothKey() ?: return null
@@ -141,8 +159,18 @@ class AudioRouteManager(private val context: Context) {
 
     fun clear() {
         runCatching { audioManager.clearCommunicationDevice() }
+        releaseBluetoothCommunication()
         if (audioManager.mode == AudioManager.MODE_IN_COMMUNICATION) {
             audioManager.mode = AudioManager.MODE_NORMAL
+        }
+    }
+
+    private fun releaseBluetoothCommunication() {
+        runCatching {
+            @Suppress("DEPRECATION")
+            audioManager.isBluetoothScoOn = false
+            @Suppress("DEPRECATION")
+            audioManager.stopBluetoothSco()
         }
     }
 
@@ -152,25 +180,35 @@ class AudioRouteManager(private val context: Context) {
         fallbackLabel: String
     ): Selection {
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-        val accepted = device != null && runCatching {
+        var accepted = device != null && runCatching {
             audioManager.setCommunicationDevice(device)
         }.getOrDefault(false)
+        if (kind == Kind.BLUETOOTH && !accepted) {
+            runCatching {
+                @Suppress("DEPRECATION")
+                audioManager.startBluetoothSco()
+                @Suppress("DEPRECATION")
+                audioManager.isBluetoothScoOn = true
+            }
+            accepted = device != null && runCatching {
+                audioManager.setCommunicationDevice(device)
+            }.getOrDefault(false)
+        }
         val input = externalInputs().firstOrNull { candidate ->
             when (kind) {
                 Kind.USB -> isUsb(candidate)
-                Kind.BLUETOOTH ->
-                    isBluetoothCommunication(candidate) &&
-                        (
-                            device == null ||
-                                representsSameAudioDevice(candidate, device)
-                            )
+                Kind.BLUETOOTH -> isBluetoothCommunication(candidate)
                 Kind.NONE -> false
             }
         }
         val key = input?.let(::deviceIdentity)
         return Selection(
             kind,
-            input?.productName?.toString() ?: device?.productName?.toString() ?: fallbackLabel,
+            if (kind == Kind.BLUETOOTH) {
+                fallbackLabel
+            } else {
+                input?.productName?.toString() ?: device?.productName?.toString() ?: fallbackLabel
+            },
             accepted && input != null,
             input,
             key

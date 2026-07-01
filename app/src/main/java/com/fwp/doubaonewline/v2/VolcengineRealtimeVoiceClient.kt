@@ -2,12 +2,18 @@ package com.fwp.doubaonewline.v2
 
 import android.app.Application
 import android.content.Context
+import android.media.AudioDeviceInfo
+import android.media.AudioFormat
+import android.media.AudioManager
+import android.media.AudioRecord
+import android.media.MediaRecorder
 import android.os.Handler
 import android.os.Looper
 import com.bytedance.speech.speechengine.SpeechEngine
 import com.bytedance.speech.speechengine.SpeechEngineDefines
 import com.bytedance.speech.speechengine.SpeechEngineGenerator
 import org.json.JSONObject
+import kotlin.concurrent.thread
 
 /**
  * P0 adapter for Volcengine's official end-to-end Android SDK.
@@ -22,10 +28,15 @@ class VolcengineRealtimeVoiceClient(
     private val welcomeDelayMs: Long = DEFAULT_WELCOME_DELAY_MS
 ) : RealtimeVoiceClient, SpeechEngine.SpeechListener {
     private val application = context.applicationContext as Application
+    private val audioManager = application.getSystemService(AudioManager::class.java)
     private val mainHandler = Handler(Looper.getMainLooper())
     private var engine: SpeechEngine? = null
     private var listener: RealtimeVoiceListener? = null
     private var pendingWelcomeText = ""
+    private var useCustomExternalRecorder = false
+    @Volatile private var customRecorderRunning = false
+    @Volatile private var customRecorder: AudioRecord? = null
+    @Volatile private var customRecorderThread: Thread? = null
 
     @Volatile
     override var state: RealtimeVoiceState = RealtimeVoiceState.IDLE
@@ -122,14 +133,37 @@ class VolcengineRealtimeVoiceClient(
             SpeechEngineDefines.PARAMS_KEY_DIALOG_URI_STRING,
             DIALOG_URI
         )
-        speechEngine.setOptionBoolean(SpeechEngineDefines.PARAMS_KEY_ENABLE_AEC_BOOL, true)
-        speechEngine.setOptionString(
-            SpeechEngineDefines.PARAMS_KEY_AEC_MODEL_PATH_STRING,
-            aecModelPath
+        @Suppress("DEPRECATION")
+        val bluetoothScoActive =
+            audioManager.communicationDevice?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
+                audioManager.isBluetoothScoOn
+        val communicationType = audioManager.communicationDevice?.type
+        useCustomExternalRecorder =
+            bluetoothScoActive ||
+                communicationType == AudioDeviceInfo.TYPE_USB_DEVICE ||
+                communicationType == AudioDeviceInfo.TYPE_USB_HEADSET ||
+                communicationType == AudioDeviceInfo.TYPE_USB_ACCESSORY
+        speechEngine.setOptionBoolean(
+            SpeechEngineDefines.PARAMS_KEY_ENABLE_AEC_BOOL,
+            !bluetoothScoActive
         )
+        if (!bluetoothScoActive) {
+            speechEngine.setOptionString(
+                SpeechEngineDefines.PARAMS_KEY_AEC_MODEL_PATH_STRING,
+                aecModelPath
+            )
+        }
         speechEngine.setOptionString(
             SpeechEngineDefines.PARAMS_KEY_RECORDER_TYPE_STRING,
-            SpeechEngineDefines.RECORDER_TYPE_RECORDER
+            if (useCustomExternalRecorder) {
+                SpeechEngineDefines.RECORDER_TYPE_STREAM
+            } else {
+                SpeechEngineDefines.RECORDER_TYPE_RECORDER
+            }
+        )
+        speechEngine.setOptionInt(
+            SpeechEngineDefines.PARAMS_KEY_RECORDER_PRESET_INT,
+            SpeechEngineDefines.RECORDER_PRESET_VOICE_COMMUNICATION
         )
         speechEngine.setOptionBoolean(
             SpeechEngineDefines.PARAMS_KEY_DIALOG_ENABLE_PLAYER_BOOL,
@@ -173,6 +207,7 @@ class VolcengineRealtimeVoiceClient(
         when (type) {
             SpeechEngineDefines.MESSAGE_TYPE_ENGINE_START -> {
                 state = RealtimeVoiceState.LISTENING
+                if (useCustomExternalRecorder) startCustomExternalRecorder()
                 listener?.onEvent(RealtimeVoiceEvent.Connected)
                 scheduleWelcome()
             }
@@ -306,10 +341,80 @@ class VolcengineRealtimeVoiceClient(
     }
 
     private fun releaseEngine() {
+        stopCustomExternalRecorder()
         mainHandler.removeCallbacksAndMessages(null)
         engine?.destroyEngine()
         engine = null
         pendingWelcomeText = ""
+    }
+
+    private fun startCustomExternalRecorder() {
+        if (customRecorderRunning) return
+        val communicationType = audioManager.communicationDevice?.type
+        val input = audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
+            .firstOrNull {
+                when (communicationType) {
+                    AudioDeviceInfo.TYPE_USB_DEVICE,
+                    AudioDeviceInfo.TYPE_USB_HEADSET,
+                    AudioDeviceInfo.TYPE_USB_ACCESSORY ->
+                        it.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
+                            it.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+                            it.type == AudioDeviceInfo.TYPE_USB_ACCESSORY
+                    else -> it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
+                }
+            }
+            ?: return
+        val minimum = AudioRecord.getMinBufferSize(
+            BLUETOOTH_SAMPLE_RATE,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT
+        )
+        if (minimum <= 0) return
+        val recorder = AudioRecord(
+            MediaRecorder.AudioSource.VOICE_COMMUNICATION,
+            BLUETOOTH_SAMPLE_RATE,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT,
+            minimum * 2
+        )
+        if (
+            recorder.state != AudioRecord.STATE_INITIALIZED ||
+            !recorder.setPreferredDevice(input)
+        ) {
+            recorder.release()
+            return
+        }
+        customRecorder = recorder
+        customRecorderRunning = true
+        recorder.startRecording()
+        customRecorderThread = thread(
+            name = "v2-bluetooth-recorder",
+            isDaemon = true
+        ) {
+            val samples = ShortArray(BLUETOOTH_FRAME_SAMPLES)
+            val bytes = ByteArray(BLUETOOTH_FRAME_SAMPLES * 2)
+            while (customRecorderRunning) {
+                val count = recorder.read(samples, 0, samples.size)
+                if (count <= 0) continue
+                for (index in 0 until count) {
+                    val value = samples[index].toInt()
+                    bytes[index * 2] = (value and 0xff).toByte()
+                    bytes[index * 2 + 1] = ((value ushr 8) and 0xff).toByte()
+                }
+                engine?.feedAudio(bytes, count * 2)
+            }
+        }
+    }
+
+    private fun stopCustomExternalRecorder() {
+        customRecorderRunning = false
+        runCatching { customRecorder?.stop() }
+        customRecorderThread?.takeIf { it !== Thread.currentThread() }?.let {
+            runCatching { it.join(1_000L) }
+        }
+        customRecorder?.release()
+        customRecorder = null
+        customRecorderThread = null
     }
 
     companion object {
@@ -318,5 +423,7 @@ class VolcengineRealtimeVoiceClient(
         const val MODEL_VERSION = "1.2.1.1"
         const val DEFAULT_WELCOME_DELAY_MS = 6_000L
         private const val DIALOG_APP_KEY = "PlgvMymc7f3tQnJ6"
+        private const val BLUETOOTH_SAMPLE_RATE = 16_000
+        private const val BLUETOOTH_FRAME_SAMPLES = 320
     }
 }
