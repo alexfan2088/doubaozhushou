@@ -310,7 +310,7 @@ class VolcengineRealtimeVoiceClient(
         const val DIALOG_ADDRESS = "wss://openspeech.bytedance.com"
         const val DIALOG_URI = "/api/v3/realtime/dialogue"
         const val MODEL_VERSION = "1.2.1.1"
-        const val DEFAULT_WELCOME_DELAY_MS = 6_000L
+        const val DEFAULT_WELCOME_DELAY_MS = 0L
         private const val DIALOG_APP_KEY = "PlgvMymc7f3tQnJ6"
     }
 }
