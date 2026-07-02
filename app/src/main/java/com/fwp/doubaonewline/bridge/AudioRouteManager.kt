@@ -46,6 +46,7 @@ class AudioRouteManager(
     private var headsetProxy: BluetoothHeadset? = null
     @Volatile
     private var a2dpProxy: BluetoothA2dp? = null
+    private var previousUsbReady: Boolean? = null
 
     init {
         requestProfileProxy(BluetoothProfile.HEADSET) { headsetProxy = it as? BluetoothHeadset }
@@ -53,10 +54,24 @@ class AudioRouteManager(
     }
 
     fun select(snapshot: AudioDeviceMonitor.Snapshot): Selection {
+        if (previousUsbReady == false && snapshot.ready) {
+            prefs.edit()
+                .putString(BridgeContract.PREF_LAST_AUDIO_ROUTE, BridgeContract.ROUTE_USB)
+                .apply()
+        }
+        previousUsbReady = snapshot.ready
         val usbEnabled = prefs.getBoolean(BridgeContract.PREF_USB_ENABLED, true)
         val bluetoothEnabled = prefs.getBoolean(BridgeContract.PREF_BLUETOOTH_ENABLED, false)
+        val lastRoute = prefs.getString(
+            BridgeContract.PREF_LAST_AUDIO_ROUTE,
+            BridgeContract.ROUTE_USB
+        )
 
-        if (usbEnabled && snapshot.ready) {
+        if (
+            lastRoute == BridgeContract.ROUTE_USB &&
+            usbEnabled &&
+            snapshot.ready
+        ) {
             val device = availableCommunicationDevices().firstOrNull(::isUsb)
             return activate(device, Kind.USB, device?.productName?.toString() ?: "Type-C USB 音频")
         }
@@ -68,24 +83,32 @@ class AudioRouteManager(
                 val selectedHfpConnected = selectedBluetoothHfpConnected()
                 if (!selectedHfpConnected && candidate.device == null) {
                     releaseBluetoothCommunication()
-                    return Selection(
+                    if (!usbEnabled || !snapshot.ready) {
+                        return Selection(
+                            Kind.BLUETOOTH,
+                            candidate.displayLabel,
+                            false
+                        )
+                    }
+                } else {
+                    val communicationDevice = candidate.device
+                        ?: if (selectedHfpConnected) {
+                            availableCommunicationDevices().firstOrNull(::isBluetoothCommunication)
+                        } else {
+                            null
+                        }
+                    return activate(
+                        communicationDevice,
                         Kind.BLUETOOTH,
-                        candidate.displayLabel,
-                        false
+                        candidate.displayLabel
                     )
                 }
-                val communicationDevice = candidate.device
-                    ?: if (selectedHfpConnected) {
-                        availableCommunicationDevices().firstOrNull(::isBluetoothCommunication)
-                    } else {
-                        null
-                    }
-                return activate(
-                    communicationDevice,
-                    Kind.BLUETOOTH,
-                    candidate.displayLabel
-                )
             }
+        }
+
+        if (usbEnabled && snapshot.ready) {
+            val device = availableCommunicationDevices().firstOrNull(::isUsb)
+            return activate(device, Kind.USB, device?.productName?.toString() ?: "Type-C USB 音频")
         }
 
         clear()
@@ -135,6 +158,7 @@ class AudioRouteManager(
         prefs.edit()
             .putString(BridgeContract.PREF_BLUETOOTH_DEVICE, candidate.key)
             .putBoolean(BridgeContract.PREF_BLUETOOTH_ENABLED, true)
+            .putString(BridgeContract.PREF_LAST_AUDIO_ROUTE, BridgeContract.ROUTE_BLUETOOTH)
             .apply()
     }
 

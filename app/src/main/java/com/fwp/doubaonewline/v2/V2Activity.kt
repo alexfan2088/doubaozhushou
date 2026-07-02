@@ -30,6 +30,7 @@ import android.view.Gravity
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.LinearLayout
+import android.widget.RadioGroup
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
@@ -43,6 +44,7 @@ import com.fwp.doubaonewline.bridge.AudioDeviceMonitor
 import com.fwp.doubaonewline.bridge.AudioRouteManager
 import com.fwp.doubaonewline.bridge.BridgeContract
 import com.fwp.doubaonewline.bridge.NewlineBridgeService
+import com.fwp.doubaonewline.bridge.VersionSessionIsolation
 import com.fwp.doubaonewline.v3.V3Activity
 import java.text.NumberFormat
 import java.util.UUID
@@ -220,14 +222,14 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
             .putBoolean(BridgeContract.PREF_ENABLED, false)
             .putString(BridgeContract.PREF_MODE, BridgeContract.MODE_V2)
             .apply()
-        stopService(Intent(this, NewlineBridgeService::class.java))
-        DoubaoAccessibilityService.cancelCallStart()
+        VersionSessionIsolation.enterV2(this)
         client = VolcengineRealtimeVoiceClient(this)
         client.setListener(this)
         coordinator = V2SessionCoordinator(LocalTestCredentialProvider, client)
         usageTracker = V2UsageTracker(this)
         tokenSavingSettings = V2TokenSavingSettings(this)
         tokenSavingConfig = tokenSavingSettings.load()
+        setupTtsEngineSelection()
         localWelcomeSpeaker = V2LocalWelcomeSpeaker(this)
         audioRouteManager = AudioRouteManager(this)
         wakeWordDetector = OfflineWakeWordDetector(
@@ -337,11 +339,13 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         }
         findViewById<Button>(R.id.switchToV1Button).setOnClickListener {
             stopSession()
+            VersionSessionIsolation.enterV1(this)
             startActivity(Intent(this, MainActivity::class.java))
             finish()
         }
         findViewById<Button>(R.id.switchToV3Button).setOnClickListener {
             stopSession()
+            VersionSessionIsolation.enterV3(this)
             startActivity(Intent(this, V3Activity::class.java))
             finish()
         }
@@ -402,7 +406,8 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
             localWelcomeSpeaker.speak(
                 tokenSavingConfig.localWelcomeText,
                 tokenSavingConfig.offlineTtsSpeakerId,
-                tokenSavingConfig.offlineTtsGain.toFloat()
+                tokenSavingConfig.offlineTtsGain.toFloat(),
+                tokenSavingConfig.ttsEngineMode
             ) { success ->
                 if (generation != sessionStartGeneration) return@speak
                 localWelcomeInProgress = false
@@ -673,6 +678,27 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         finishSessionDuration()
         coordinator.stop(DisconnectReason.USER_REQUEST)
         V2VoiceForegroundService.stop(this)
+    }
+
+    private fun setupTtsEngineSelection() {
+        val group = findViewById<RadioGroup>(R.id.v2TtsEngineGroup)
+        group.check(
+            if (tokenSavingConfig.ttsEngineMode == TtsEngineMode.SYSTEM) {
+                R.id.v2SystemTtsRadio
+            } else {
+                R.id.v2LocalTtsRadio
+            }
+        )
+        group.setOnCheckedChangeListener { _, checkedId ->
+            tokenSavingConfig = tokenSavingConfig.copy(
+                ttsEngineMode = if (checkedId == R.id.v2SystemTtsRadio) {
+                    TtsEngineMode.SYSTEM
+                } else {
+                    TtsEngineMode.LOCAL
+                }
+            )
+            tokenSavingSettings.save(tokenSavingConfig)
+        }
     }
 
     private fun inspectAudioRoute() {

@@ -8,6 +8,7 @@ import android.widget.EditText
 import android.widget.SeekBar
 import android.widget.Spinner
 import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.fwp.doubaonewline.R
 
@@ -82,7 +83,8 @@ class V2TokenSavingSettingsActivity : AppCompatActivity() {
             welcomeSpeaker.speak(
                 text,
                 speakerSpinner.selectedItemPosition.coerceIn(0, 4),
-                selectedGain().toFloat()
+                selectedGain().toFloat(),
+                store.load().ttsEngineMode
             ) {
                 previewButton.isEnabled = true
                 previewButton.text = "试听当前音色"
@@ -92,6 +94,18 @@ class V2TokenSavingSettingsActivity : AppCompatActivity() {
             contextRoundsSpinner.isEnabled = it == 0
         }
         bind(store.load())
+        findViewById<Button>(R.id.disableTokenOptimizationButton).setOnClickListener {
+            val current = store.load()
+            val preset = V2TokenSavingConfig.unoptimized().copy(
+                localWelcomeText = current.localWelcomeText,
+                offlineTtsSpeakerId = current.offlineTtsSpeakerId,
+                offlineTtsGain = current.offlineTtsGain,
+                ttsEngineMode = current.ttsEngineMode
+            )
+            store.save(preset)
+            bind(preset)
+            Toast.makeText(this, "已切换为不限制回答和上下文的配置", Toast.LENGTH_SHORT).show()
+        }
         findViewById<Button>(R.id.saveTokenSettingsButton).setOnClickListener {
             save()
             finish()
@@ -138,6 +152,7 @@ class V2TokenSavingSettingsActivity : AppCompatActivity() {
                     .ifBlank { V2TokenSavingConfig.DEFAULT_WELCOME_TEXT },
                 offlineTtsSpeakerId = speakerSpinner.selectedItemPosition.coerceIn(0, 4),
                 offlineTtsGain = selectedGain(),
+                ttsEngineMode = store.load().ttsEngineMode,
                 maxResponseSentences =
                     V2TokenSavingConfig.SENTENCE_OPTIONS[sentenceSpinner.selectedItemPosition],
                 idleTimeoutSeconds =

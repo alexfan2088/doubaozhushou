@@ -223,6 +223,30 @@
             android:text="暂停语音会话"
             android:textAllCaps="false" />
 
+        <RadioGroup
+            android:id="@+id/v2TtsEngineGroup"
+            android:layout_width="match_parent"
+            android:layout_height="38dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/v2SystemTtsRadio"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:text="欢迎词：系统 TTS"
+                android:textSize="12sp" />
+
+            <RadioButton
+                android:id="@+id/v2LocalTtsRadio"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:text="欢迎词：本地 TTS"
+                android:textSize="12sp" />
+        </RadioGroup>
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="42dp"

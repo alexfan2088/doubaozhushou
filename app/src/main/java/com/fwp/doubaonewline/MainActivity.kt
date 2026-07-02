@@ -34,6 +34,7 @@ import com.fwp.doubaonewline.automation.DoubaoAccessibilityService
 import com.fwp.doubaonewline.bridge.BridgeContract
 import com.fwp.doubaonewline.bridge.AudioRouteManager
 import com.fwp.doubaonewline.bridge.NewlineBridgeService
+import com.fwp.doubaonewline.bridge.VersionSessionIsolation
 import com.fwp.doubaonewline.v2.V2Activity
 import com.fwp.doubaonewline.v3.V3Activity
 
@@ -70,6 +71,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        VersionSessionIsolation.enterV1(this)
 
         statusText = findViewById(R.id.statusText)
         detailText = findViewById(R.id.detailText)
@@ -80,10 +82,14 @@ class MainActivity : AppCompatActivity() {
         setupReadyGreeting()
 
         findViewById<Button>(R.id.switchToV2Button).setOnClickListener {
+            stopService(Intent(this, NewlineBridgeService::class.java))
+            VersionSessionIsolation.enterV2(this)
             startActivity(Intent(this, V2Activity::class.java))
             finish()
         }
         findViewById<Button>(R.id.switchToV3Button).setOnClickListener {
+            stopService(Intent(this, NewlineBridgeService::class.java))
+            VersionSessionIsolation.enterV3(this)
             startActivity(Intent(this, V3Activity::class.java))
             finish()
         }

@@ -17,6 +17,7 @@ import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
 import android.widget.Button
+import android.widget.RadioGroup
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -26,13 +27,16 @@ import com.fwp.doubaonewline.R
 import com.fwp.doubaonewline.bridge.AudioDeviceMonitor
 import com.fwp.doubaonewline.bridge.AudioRouteManager
 import com.fwp.doubaonewline.bridge.BridgeContract
+import com.fwp.doubaonewline.bridge.VersionSessionIsolation
 import com.fwp.doubaonewline.v2.V2Activity
+import com.fwp.doubaonewline.v2.TtsEngineMode
 
 class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.Listener {
     private lateinit var statusText: TextView
     private lateinit var detailText: TextView
     private lateinit var modelText: TextView
     private lateinit var routeText: TextView
+    private lateinit var selectedBluetoothText: TextView
     private lateinit var transcriptText: TextView
     private lateinit var responseText: TextView
     private lateinit var pauseButton: Button
@@ -52,6 +56,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
     private var currentSpokenText = ""
     private var pendingBluetoothSelection = false
     private var callPaused = false
+    private var terminating = false
     private val handler = Handler(Looper.getMainLooper())
     private val callCheck = object : Runnable {
         override fun run() {
@@ -92,20 +97,23 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_v3)
+        VersionSessionIsolation.enterV3(this)
         statusText = findViewById(R.id.v3StatusText)
         detailText = findViewById(R.id.v3DetailText)
         modelText = findViewById(R.id.v3ModelText)
         routeText = findViewById(R.id.v3RouteText)
+        selectedBluetoothText = findViewById(R.id.v3SelectedBluetoothText)
         transcriptText = findViewById(R.id.v3TranscriptText)
         responseText = findViewById(R.id.v3ResponseText)
         pauseButton = findViewById(R.id.v3PauseButton)
         settings = V3Settings(this)
         config = settings.load()
         modelManager = V3ModelManager(this)
-        audioRouteManager = AudioRouteManager(this, "v3")
+        audioRouteManager = AudioRouteManager(this)
         audioMonitor = AudioDeviceMonitor(this) { inspectAudioRoute() }
         deepSeek = V3DeepSeekEngine(this)
         tts = V3TtsPlayer(this)
+        setupTtsEngineSelection()
 
         getSharedPreferences(BridgeContract.PREFS, MODE_PRIVATE)
             .edit().putString(BridgeContract.PREF_MODE, BridgeContract.MODE_V3).apply()
@@ -122,15 +130,18 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
         }
         findViewById<Button>(R.id.v3SwitchToV1Button).setOnClickListener {
             shutdownSession()
+            VersionSessionIsolation.enterV1(this)
             startActivity(Intent(this, MainActivity::class.java))
             finish()
         }
         findViewById<Button>(R.id.v3SwitchToV2Button).setOnClickListener {
             shutdownSession()
+            VersionSessionIsolation.enterV2(this)
             startActivity(Intent(this, V2Activity::class.java))
             finish()
         }
         renderModelSummary()
+        updateSelectedBluetoothText()
         handler.post(callCheck)
     }
 
@@ -145,6 +156,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
         config = settings.load()
         renderModelSummary()
         inspectAudioRoute()
+        updateSelectedBluetoothText()
         if (previous.selectedModel != config.selectedModel && loadedModel != null) {
             stopEngines(unloadModel = true)
         }
@@ -157,7 +169,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
     }
 
     private fun startIfReady() {
-        if (paused || callPaused || modelLoading) return
+        if (terminating || paused || callPaused || modelLoading) return
         if (
             ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) !=
             PackageManager.PERMISSION_GRANTED
@@ -193,6 +205,10 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
     }
 
     override fun onModelReady() {
+        if (terminating || isFinishing || isDestroyed) {
+            deepSeek.unload()
+            return
+        }
         modelLoading = false
         loadedModel = config.selectedModel
         startIfReady()
@@ -233,10 +249,12 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
     }
 
     override fun onPartialAnswer(text: String) {
+        if (terminating) return
         responseText.text = text
     }
 
     override fun onFinalAnswer(text: String) {
+        if (terminating) return
         thinking = false
         if (paused) return
         responseText.text = text
@@ -249,7 +267,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
             "播放期间暂停聆听。"
         }
         asr?.setProcessingEnabled(config.allowBargeIn)
-        tts.speak(text, config.speakerId, config.ttsGain) {
+        tts.speak(text, config.speakerId, config.ttsGain, config.ttsEngineMode) {
             runOnUiThread {
                 speaking = false
                 currentSpokenText = ""
@@ -260,6 +278,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
     }
 
     override fun onError(message: String) {
+        if (terminating) return
         modelLoading = false
         thinking = false
         showError(message)
@@ -321,6 +340,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
     }
 
     private fun shutdownSession() {
+        terminating = true
         stopEngines(unloadModel = true)
         audioRouteManager.clear()
     }
@@ -382,6 +402,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
             .setItems(labels) { _, index ->
                 audioRouteManager.saveBluetoothCandidate(ordered[index])
                 stopEngines(unloadModel = false)
+                updateSelectedBluetoothText()
                 inspectAudioRoute()
                 startIfReady()
             }
@@ -394,11 +415,47 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
         return SpannableString(label + suffix).apply {
             setSpan(StyleSpan(Typeface.BOLD), 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             setSpan(
+                ForegroundColorSpan(Color.rgb(21, 101, 192)),
+                0,
+                label.length,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+            )
+            setSpan(
                 ForegroundColorSpan(Color.rgb(211, 47, 47)),
                 label.length,
                 length,
                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
             )
+        }
+    }
+
+    private fun updateSelectedBluetoothText() {
+        val name = audioRouteManager.selectedBluetoothName()
+        selectedBluetoothText.text = if (name == null) {
+            "尚未选择蓝牙设备"
+        } else {
+            selectedLabel(name)
+        }
+    }
+
+    private fun setupTtsEngineSelection() {
+        val group = findViewById<RadioGroup>(R.id.v3TtsEngineGroup)
+        group.check(
+            if (config.ttsEngineMode == TtsEngineMode.SYSTEM) {
+                R.id.v3SystemTtsRadio
+            } else {
+                R.id.v3LocalTtsRadio
+            }
+        )
+        group.setOnCheckedChangeListener { _, checkedId ->
+            config = config.copy(
+                ttsEngineMode = if (checkedId == R.id.v3SystemTtsRadio) {
+                    TtsEngineMode.SYSTEM
+                } else {
+                    TtsEngineMode.LOCAL
+                }
+            )
+            settings.save(config)
         }
     }
 

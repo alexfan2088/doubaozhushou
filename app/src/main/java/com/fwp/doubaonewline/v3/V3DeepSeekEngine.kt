@@ -84,13 +84,9 @@ class V3DeepSeekEngine(context: Context) {
                 engine.sendUserPrompt(prompt, MAX_OUTPUT_TOKENS).collect { token ->
                     if (id != generation.get()) return@collect
                     raw.append(token)
-                    val visible = visibleAnswer(raw.toString(), generationFinished = false)
-                    if (visible.isNotBlank()) {
-                        withContext(Dispatchers.Main) { listener.onPartialAnswer(visible) }
-                    }
                 }
                 if (id != generation.get()) return@runCatching
-                val answer = visibleAnswer(raw.toString(), generationFinished = true)
+                val answer = finalAnswer(raw.toString())
                     .trim()
                     .ifBlank { "这个问题我暂时没有生成出合适的回答。" }
                 completedRounds++
@@ -129,22 +125,18 @@ class V3DeepSeekEngine(context: Context) {
     }
 
     private fun buildSystemPrompt(maxSentences: Int) =
-        "你是运行在手机上的中文语音助手。直接给出最终答案，不展示思考过程，" +
-            "不要输出<think>标签，不重复用户问题。除非用户要求详细说明，" +
+        "你是运行在手机上的中文语音助手。不要展示、复述或输出任何推理过程，" +
+            "不要输出<think>标签，直接从最终答案的第一个字开始回答，不重复用户问题。" +
+            "优先使用已有知识简短作答，不进行冗长分析。除非用户要求详细说明，" +
             "每次回答不超过${maxSentences.coerceIn(1, 3)}句话。"
 
-    private fun visibleAnswer(raw: String, generationFinished: Boolean): String {
-        val afterThinking = if ("</think>" in raw) {
-            raw.substringAfterLast("</think>")
-        } else if ("<think>" in raw && !generationFinished) {
-            ""
-        } else {
-            raw.replace(Regex("<think>[\\s\\S]*?</think>"), "")
-                .replace("<think>", "")
-                .replace("</think>", "")
-        }
-        return afterThinking.trimStart()
-    }
+    private fun finalAnswer(raw: String): String =
+        when {
+            "</think>" in raw -> raw.substringAfterLast("</think>")
+            "<think>" in raw -> ""
+            else -> raw
+        }.replace(Regex("</?think>", RegexOption.IGNORE_CASE), "")
+            .trimStart()
 
     companion object {
         private const val MAX_OUTPUT_TOKENS = 128

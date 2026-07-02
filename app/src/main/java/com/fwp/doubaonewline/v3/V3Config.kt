@@ -3,6 +3,7 @@ package com.fwp.doubaonewline.v3
 import android.app.ActivityManager
 import android.content.Context
 import android.os.StatFs
+import com.fwp.doubaonewline.v2.TtsEngineMode
 
 enum class V3Model(
     val label: String,
@@ -32,6 +33,7 @@ data class V3Config(
     val allowBargeIn: Boolean = true,
     val speakerId: Int = 0,
     val ttsGain: Int = 20,
+    val ttsEngineMode: TtsEngineMode = TtsEngineMode.LOCAL,
     val maxResponseSentences: Int = 2,
     val contextRounds: Int = 4
 )
@@ -72,6 +74,11 @@ class V3Settings(private val context: Context) {
         allowBargeIn = prefs.getBoolean(KEY_BARGE_IN, true),
         speakerId = prefs.getInt(KEY_SPEAKER, 0).coerceIn(0, 4),
         ttsGain = prefs.getInt(KEY_GAIN, 20).coerceIn(1, 30),
+        ttsEngineMode = runCatching {
+            TtsEngineMode.valueOf(
+                prefs.getString(KEY_TTS_ENGINE, TtsEngineMode.LOCAL.name).orEmpty()
+            )
+        }.getOrDefault(TtsEngineMode.LOCAL),
         maxResponseSentences = prefs.getInt(KEY_SENTENCES, 2).coerceIn(1, 3),
         contextRounds = prefs.getInt(KEY_CONTEXT_ROUNDS, 4).coerceIn(1, 8)
     )
@@ -82,6 +89,7 @@ class V3Settings(private val context: Context) {
             .putBoolean(KEY_BARGE_IN, config.allowBargeIn)
             .putInt(KEY_SPEAKER, config.speakerId.coerceIn(0, 4))
             .putInt(KEY_GAIN, config.ttsGain.coerceIn(1, 30))
+            .putString(KEY_TTS_ENGINE, config.ttsEngineMode.name)
             .putInt(KEY_SENTENCES, config.maxResponseSentences.coerceIn(1, 3))
             .putInt(KEY_CONTEXT_ROUNDS, config.contextRounds.coerceIn(1, 8))
             .apply()
@@ -113,6 +121,7 @@ class V3Settings(private val context: Context) {
         private const val KEY_BARGE_IN = "allow_barge_in"
         private const val KEY_SPEAKER = "speaker_id"
         private const val KEY_GAIN = "tts_gain"
+        private const val KEY_TTS_ENGINE = "tts_engine"
         private const val KEY_SENTENCES = "max_response_sentences"
         private const val KEY_CONTEXT_ROUNDS = "context_rounds"
     }

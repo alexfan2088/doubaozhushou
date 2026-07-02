@@ -26,7 +26,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="保存后立即生效，并在重启应用或手机后恢复。"
+            android:text="回答长度、上下文和回答超时同时作用于直连及本地唤醒模式；待机关闭和重复唤醒仅作用于本地唤醒模式。保存后持久生效。"
             android:textColor="@color/muted"
             android:textSize="12sp" />
 
@@ -133,6 +133,17 @@
         <Spinner
             android:id="@+id/responseTimeoutSpinner"
             style="@style/TokenSettingSpinner" />
+
+        <Button
+            android:id="@+id/disableTokenOptimizationButton"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="12dp"
+            android:backgroundTint="@color/warning"
+            android:text="不优化 Token 消耗"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold" />
 
         <Button
             android:id="@+id/saveTokenSettingsButton"

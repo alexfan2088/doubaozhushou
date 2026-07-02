@@ -84,6 +84,7 @@ class V2LocalWelcomeSpeaker(context: Context) {
         text: String,
         speakerId: Int,
         gain: Float,
+        engineMode: TtsEngineMode = TtsEngineMode.LOCAL,
         onComplete: (Boolean) -> Unit
     ) {
         stop()
@@ -100,19 +101,27 @@ class V2LocalWelcomeSpeaker(context: Context) {
         )
         val target = cachedWelcomeFile(
             normalizedText,
-            "sherpa-${speakerId.coerceIn(0, 4)}-gain-$safeGain"
+            if (engineMode == TtsEngineMode.SYSTEM) {
+                "system-gain-$safeGain"
+            } else {
+                "sherpa-${speakerId.coerceIn(0, 4)}-gain-$safeGain"
+            }
         )
         if (target.isFile && target.length() > WAV_HEADER_SIZE) {
             playFile(target)
             return
         }
-        synthesizeWithSherpa(
-            normalizedText,
-            speakerId.coerceIn(0, 4),
-            safeGain,
-            target,
-            currentGeneration
-        )
+        if (engineMode == TtsEngineMode.SYSTEM) {
+            synthesizeWithSystem(normalizedText, target, safeGain)
+        } else {
+            synthesizeWithSherpa(
+                normalizedText,
+                speakerId.coerceIn(0, 4),
+                safeGain,
+                target,
+                currentGeneration
+            )
+        }
     }
 
     private fun synthesizeWithSystem(text: String, target: File, gain: Float) {

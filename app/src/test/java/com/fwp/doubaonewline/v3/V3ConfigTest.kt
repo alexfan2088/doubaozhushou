@@ -2,6 +2,7 @@ package com.fwp.doubaonewline.v3
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import com.fwp.doubaonewline.v2.TtsEngineMode
 import org.junit.Test
 
 class V3ConfigTest {
@@ -10,6 +11,7 @@ class V3ConfigTest {
         val config = V3Config()
         assertEquals(V3Model.DEEPSEEK_1_5B, config.selectedModel)
         assertTrue(config.allowBargeIn)
+        assertEquals(TtsEngineMode.LOCAL, config.ttsEngineMode)
         assertEquals(20, config.ttsGain)
     }
 

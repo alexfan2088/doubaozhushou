@@ -2,6 +2,7 @@ package com.fwp.doubaonewline.v3
 
 import android.content.Context
 import com.fwp.doubaonewline.v2.V2LocalWelcomeSpeaker
+import com.fwp.doubaonewline.v2.TtsEngineMode
 import java.util.ArrayDeque
 
 class V3TtsPlayer(context: Context) {
@@ -10,12 +11,20 @@ class V3TtsPlayer(context: Context) {
     private var generation = 0L
     private var speakerId = 0
     private var gain = 20f
+    private var engineMode = TtsEngineMode.LOCAL
     private var completion: (() -> Unit)? = null
 
-    fun speak(text: String, speakerId: Int, gain: Int, onComplete: () -> Unit) {
+    fun speak(
+        text: String,
+        speakerId: Int,
+        gain: Int,
+        engineMode: TtsEngineMode,
+        onComplete: () -> Unit
+    ) {
         stop()
         this.speakerId = speakerId.coerceIn(0, 4)
         this.gain = gain.coerceIn(1, 30).toFloat()
+        this.engineMode = engineMode
         completion = onComplete
         queue.addAll(splitForSpeech(text))
         val current = ++generation
@@ -44,7 +53,7 @@ class V3TtsPlayer(context: Context) {
             }
             return
         }
-        speaker.speak(next, speakerId, gain) {
+        speaker.speak(next, speakerId, gain, engineMode) {
             if (current == generation) playNext(current)
         }
     }

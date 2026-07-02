@@ -106,6 +106,7 @@ class V3SettingsActivity : AppCompatActivity() {
         allowBargeIn = bargeIn.isChecked,
         speakerId = speaker.selectedItemPosition.coerceIn(0, 4),
         ttsGain = (gain.progress + 1).coerceIn(1, 30),
+        ttsEngineMode = settings.load().ttsEngineMode,
         maxResponseSentences = sentences.selectedItemPosition + 1,
         contextRounds = contextRounds.selectedItemPosition + 1
     )
