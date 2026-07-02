@@ -3,7 +3,10 @@ package com.fwp.doubaonewline.bridge
 import android.content.Context
 import org.json.JSONObject
 
-class BluetoothSelectionStore(private val context: Context) {
+class BluetoothSelectionStore(
+    private val context: Context,
+    private val fileName: String = FILE_NAME
+) {
 
     data class Record(
         val key: String,
@@ -16,14 +19,14 @@ class BluetoothSelectionStore(private val context: Context) {
             .put("displayLabel", record.displayLabel)
             .toString()
 
-        context.openFileOutput(FILE_NAME, Context.MODE_PRIVATE).use { stream ->
+        context.openFileOutput(fileName, Context.MODE_PRIVATE).use { stream ->
             stream.write(payload.toByteArray(Charsets.UTF_8))
         }
     }
 
     fun load(): Record? {
         val payload = runCatching {
-            context.openFileInput(FILE_NAME).use { stream ->
+            context.openFileInput(fileName).use { stream ->
                 stream.readBytes().toString(Charsets.UTF_8)
             }
         }.getOrNull() ?: return null

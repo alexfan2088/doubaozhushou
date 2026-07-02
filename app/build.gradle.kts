@@ -58,6 +58,13 @@ android {
         buildConfig = true
     }
 
+    packaging {
+        jniLibs {
+            // llama.cpp loads the best CPU backend dynamically from nativeLibraryDir.
+            useLegacyPackaging = true
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
@@ -83,6 +90,8 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.bytedance.speechengine:speechengine_tob:0.0.14.6.1-bugfix")
     implementation("com.squareup.okhttp3:okhttp:4.9.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation(files("libs/sherpa-onnx-1.13.3.aar"))
+    implementation(files("libs/llama-android-v3.aar"))
     testImplementation("junit:junit:4.13.2")
 }

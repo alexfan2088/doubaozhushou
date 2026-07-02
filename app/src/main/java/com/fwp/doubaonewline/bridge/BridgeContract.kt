@@ -18,6 +18,7 @@ object BridgeContract {
     const val PREF_MODE = "app_mode"
     const val MODE_V1 = "v1"
     const val MODE_V2 = "v2"
+    const val MODE_V3 = "v3"
 
     const val DOUBAO_PACKAGE = "com.larus.nova"
     const val DEFAULT_READY_GREETING = "豆包豆包，你好啊"

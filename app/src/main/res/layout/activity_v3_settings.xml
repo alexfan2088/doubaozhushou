@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F7F9FC"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingLeft="20dp"
+        android:paddingTop="56dp"
+        android:paddingRight="20dp"
+        android:paddingBottom="20dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="V3 本地模型设置"
+            android:textColor="@color/text"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/v3RecommendationText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/status_background"
+            android:padding="12dp"
+            android:textColor="@color/text"
+            android:textSize="12sp" />
+
+        <RadioGroup
+            android:id="@+id/v3ModelRadioGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp">
+
+            <RadioButton
+                android:id="@+id/v3Model15Radio"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:text="DeepSeek 1.5B（速度优先，约 1.12GB）" />
+
+            <RadioButton
+                android:id="@+id/v3Model7Radio"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:text="DeepSeek 7B（质量优先，约 4.7GB）" />
+        </RadioGroup>
+
+        <TextView
+            android:id="@+id/v3ModelInstallStatus"
+            style="@style/TokenSettingLabel"
+            android:text="正在检查模型" />
+
+        <ProgressBar
+            android:id="@+id/v3ModelProgress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="8dp"
+            android:max="100"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:layout_marginTop="6dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/v3DownloadModelButton"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:backgroundTint="@color/primary"
+                android:text="下载所选模型"
+                android:textAllCaps="false"
+                android:textColor="#FFFFFF" />
+
+            <Button
+                android:id="@+id/v3DeleteModelButton"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_marginLeft="6dp"
+                android:layout_weight="1"
+                android:text="删除所选模型"
+                android:textAllCaps="false" />
+        </LinearLayout>
+
+        <CheckBox
+            android:id="@+id/v3BargeInCheck"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="8dp"
+            android:checked="true"
+            android:text="允许播放时语音打断（默认开启）" />
+
+        <TextView
+            style="@style/TokenSettingLabel"
+            android:text="离线欢迎词音色" />
+
+        <Spinner
+            android:id="@+id/v3SpeakerSpinner"
+            style="@style/TokenSettingSpinner" />
+
+        <TextView
+            android:id="@+id/v3GainLabel"
+            style="@style/TokenSettingLabel"
+            android:text="TTS 总增益：20 倍（范围 1–30 倍）" />
+
+        <SeekBar
+            android:id="@+id/v3GainSeek"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:max="29"
+            android:progress="19" />
+
+        <TextView
+            style="@style/TokenSettingLabel"
+            android:text="回答长度" />
+
+        <Spinner
+            android:id="@+id/v3SentenceSpinner"
+            style="@style/TokenSettingSpinner" />
+
+        <TextView
+            style="@style/TokenSettingLabel"
+            android:text="保留对话轮数" />
+
+        <Spinner
+            android:id="@+id/v3ContextSpinner"
+            style="@style/TokenSettingSpinner" />
+
+        <Button
+            android:id="@+id/v3SaveSettingsButton"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="16dp"
+            android:backgroundTint="@color/primary"
+            android:text="保存设置"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold" />
+    </LinearLayout>
+</ScrollView>

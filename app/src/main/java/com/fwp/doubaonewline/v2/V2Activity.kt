@@ -43,6 +43,7 @@ import com.fwp.doubaonewline.bridge.AudioDeviceMonitor
 import com.fwp.doubaonewline.bridge.AudioRouteManager
 import com.fwp.doubaonewline.bridge.BridgeContract
 import com.fwp.doubaonewline.bridge.NewlineBridgeService
+import com.fwp.doubaonewline.v3.V3Activity
 import java.text.NumberFormat
 import java.util.UUID
 
@@ -337,6 +338,11 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         findViewById<Button>(R.id.switchToV1Button).setOnClickListener {
             stopSession()
             startActivity(Intent(this, MainActivity::class.java))
+            finish()
+        }
+        findViewById<Button>(R.id.switchToV3Button).setOnClickListener {
+            stopSession()
+            startActivity(Intent(this, V3Activity::class.java))
             finish()
         }
         registerConnectionReceiver()

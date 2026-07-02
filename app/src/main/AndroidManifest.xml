@@ -47,6 +47,15 @@
             android:exported="false" />
 
         <activity
+            android:name=".v3.V3Activity"
+            android:exported="false"
+            android:launchMode="singleTask" />
+
+        <activity
+            android:name=".v3.V3SettingsActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".ModeSelectionActivity"
             android:exported="false" />
 
@@ -61,6 +70,11 @@
 
         <service
             android:name=".v2.V2VoiceForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <service
+            android:name=".v3.V3VoiceForegroundService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
 

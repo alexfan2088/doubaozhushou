@@ -12,7 +12,10 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import androidx.core.content.ContextCompat
 
-class AudioRouteManager(private val context: Context) {
+class AudioRouteManager(
+    private val context: Context,
+    preferenceNamespace: String? = null
+) {
 
     enum class Kind { USB, BLUETOOTH, NONE }
 
@@ -30,8 +33,15 @@ class AudioRouteManager(private val context: Context) {
 
     private val audioManager = context.getSystemService(AudioManager::class.java)
     private val bluetoothManager = context.getSystemService(BluetoothManager::class.java)
-    private val prefs = context.getSharedPreferences(BridgeContract.PREFS, Context.MODE_PRIVATE)
-    private val bluetoothSelectionStore = BluetoothSelectionStore(context)
+    private val prefs = context.getSharedPreferences(
+        preferenceNamespace?.let { "${it}_audio_preferences" } ?: BridgeContract.PREFS,
+        Context.MODE_PRIVATE
+    )
+    private val bluetoothSelectionStore = BluetoothSelectionStore(
+        context,
+        preferenceNamespace?.let { "bluetooth_selection_$it.json" }
+            ?: "bluetooth_selection.json"
+    )
     @Volatile
     private var headsetProxy: BluetoothHeadset? = null
     @Volatile
