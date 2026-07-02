@@ -1,6 +1,6 @@
-d òu b āo d òu b āo :5.0 #0.05 @豆包豆包
-d uì b a d uì b a :4.0 #0.08 @豆包豆包A
-d ǒng m a d ǒng m a :4.0 #0.08 @豆包豆包B
-d uì b a z ǒu b a :4.0 #0.08 @豆包豆包C
-z ěn m e z ěn m e :3.5 #0.10 @豆包豆包D
-d ǒng b a d ōu b a z ǒu b a :3.5 #0.10 @豆包豆包E
+d òu b āo d òu b āo :5.0 @豆包豆包
+d uì b a d uì b a :4.0 @豆包豆包A
+d ǒng m a d ǒng m a :4.0 @豆包豆包B
+d uì b a z ǒu b a :4.0 @豆包豆包C
+z ěn m e z ěn m e :3.5 @豆包豆包D
+d ǒng b a d ōu b a z ǒu b a :3.5 @豆包豆包E

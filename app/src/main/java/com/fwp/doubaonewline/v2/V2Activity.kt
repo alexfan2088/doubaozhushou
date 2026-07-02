@@ -166,9 +166,34 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
             }
             cloudSessionActive = false
             coordinator.stop(DisconnectReason.IDLE_TIMEOUT)
-            statusText.text = "请用豆包豆包唤醒"
-            detailText.text = "$activeConnectionDetail\n本地监听中，不消耗云端 Token。"
-            handler.postDelayed({ startLocalWakeListening() }, AUDIO_HANDOFF_DELAY_MS)
+            val generation = sessionStartGeneration
+            localWelcomeInProgress = true
+            statusText.text = "准备进入待唤醒"
+            detailText.text = "$activeConnectionDetail\n正在播放休息提示。"
+            localWelcomeSpeaker.speak(
+                LOCAL_WAKE_STANDBY_PROMPT,
+                tokenSavingConfig.offlineTtsSpeakerId,
+                tokenSavingConfig.offlineTtsGain.toFloat(),
+                tokenSavingConfig.ttsEngineMode
+            ) {
+                if (
+                    generation != sessionStartGeneration ||
+                    manuallyPaused ||
+                    userRequestedStop ||
+                    activeRouteKey == null ||
+                    !localWakeCheck.isChecked
+                ) {
+                    return@speak
+                }
+                localWelcomeInProgress = false
+                statusText.text = "请用豆包豆包唤醒"
+                detailText.text =
+                    "$activeConnectionDetail\n本地监听中，不消耗云端 Token。"
+                handler.postDelayed(
+                    { startLocalWakeListening() },
+                    STANDBY_PROMPT_GUARD_MS
+                )
+            }
         }
     }
 
@@ -317,6 +342,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
             if (checked) {
                 if (cloudSessionActive) scheduleLocalWakeStandby()
             } else {
+                cancelPendingLocalWelcome()
                 wakeWordDetector.stop()
                 if (
                     !manuallyPaused &&
@@ -1168,7 +1194,9 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         private const val DURATION_CHECKPOINT_INTERVAL_MS = 5_000L
         private const val RECONNECT_DELAY_MS = 3_000L
         private const val AUDIO_HANDOFF_DELAY_MS = 600L
+        private const val STANDBY_PROMPT_GUARD_MS = 1_500L
         private const val BUSY_RECHECK_DELAY_MS = 1_000L
+        private const val LOCAL_WAKE_STANDBY_PROMPT = "我先休息了，有事叫我"
         private const val CONTEXT_RECONNECT_DELAY_MS = 500L
         private const val KEY_LOCAL_WAKE_ENABLED = "local_wake_enabled"
         private const val KEY_WAKE_SENSITIVITY = "wake_sensitivity"

@@ -157,7 +157,7 @@ class OfflineWakeWordDetector(
                     if (result.isNotBlank()) {
                         Log.i(TAG, "KWS candidate detected: $result")
                     }
-                    if (result.startsWith(WAKE_WORD)) {
+                    if (WakeKeywordPolicy.accepts(result, profile.keywordThreshold)) {
                         detected = true
                         running = false
                         break
@@ -370,7 +370,7 @@ class OfflineWakeWordDetector(
         private const val TAG = "OfflineWakeWord"
         private const val SAMPLE_RATE = 16_000
         private const val MODEL_DIR = "kws-zh-en"
-        private const val WAKE_WORD = "豆包豆包"
+        private const val WAKE_WORD = WakeKeywordPolicy.EXACT_KEYWORD
         private const val KEYWORD_SCORE = 3.0f
         private const val LEVEL_LOG_INTERVAL_MS = 2_000L
         private const val ROUTE_SETTLE_MS = 350L
