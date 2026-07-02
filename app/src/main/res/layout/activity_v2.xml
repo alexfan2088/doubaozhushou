@@ -187,41 +187,12 @@
                 android:textSize="14sp"
                 android:textStyle="bold" />
 
-            <TextView
-                android:id="@+id/v2TotalTokensText"
+            <LinearLayout
+                android:id="@+id/v2UsageTable"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:text="本月累计：0 Token · 0.0 分钟"
-                android:textColor="@color/text"
-                android:textSize="13sp" />
-
-            <TextView
-                android:id="@+id/v2TodayTokensText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:text="今日累计：0 Token · 0.0 分钟"
-                android:textColor="@color/text"
-                android:textSize="13sp" />
-
-            <TextView
-                android:id="@+id/v2SessionTokensText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:text="本轮对话：0 Token · 0.0 分钟"
-                android:textColor="@color/text"
-                android:textSize="13sp" />
-
-            <TextView
-                android:id="@+id/v2EstimatedCostText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="2dp"
-                android:text="估算金额：未配置单价"
-                android:textColor="@color/muted"
-                android:textSize="12sp" />
+                android:orientation="vertical" />
         </LinearLayout>
 
         <EditText

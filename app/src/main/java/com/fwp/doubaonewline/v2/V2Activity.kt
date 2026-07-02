@@ -26,16 +26,17 @@ import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
+import android.view.Gravity
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import com.fwp.doubaonewline.BuildConfig
 import com.fwp.doubaonewline.MainActivity
 import com.fwp.doubaonewline.R
 import com.fwp.doubaonewline.automation.DoubaoAccessibilityService
@@ -51,10 +52,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     private lateinit var detailText: TextView
     private lateinit var welcomeInput: EditText
     private lateinit var stopButton: Button
-    private lateinit var totalTokensText: TextView
-    private lateinit var todayTokensText: TextView
-    private lateinit var sessionTokensText: TextView
-    private lateinit var estimatedCostText: TextView
+    private lateinit var usageTable: LinearLayout
     private lateinit var selectedBluetoothText: TextView
     private lateinit var localWakeCheck: CheckBox
     private lateinit var wakeSensitivityText: TextView
@@ -197,10 +195,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         detailText = findViewById(R.id.v2DetailText)
         welcomeInput = findViewById(R.id.v2WelcomeInput)
         stopButton = findViewById(R.id.v2StopButton)
-        totalTokensText = findViewById(R.id.v2TotalTokensText)
-        todayTokensText = findViewById(R.id.v2TodayTokensText)
-        sessionTokensText = findViewById(R.id.v2SessionTokensText)
-        estimatedCostText = findViewById(R.id.v2EstimatedCostText)
+        usageTable = findViewById(R.id.v2UsageTable)
         selectedBluetoothText = findViewById(R.id.v2SelectedBluetoothText)
         localWakeCheck = findViewById(R.id.v2LocalWakeCheck)
         wakeSensitivityText = findViewById(R.id.v2WakeSensitivityText)
@@ -747,8 +742,19 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
                     sessionInputAudioTokens += event.inputAudioUnits
                     sessionOutputTextTokens += event.outputTextUnits
                     sessionOutputAudioTokens += event.outputAudioUnits
-                    renderSessionTokens()
-                    renderUsage(usageTracker.add(event.inputUnits, event.outputUnits))
+                    val breakdown = V2TokenBreakdown(
+                        inputText = event.inputTextUnits,
+                        inputAudio = event.inputAudioUnits,
+                        outputText = event.outputTextUnits,
+                        outputAudio = event.outputAudioUnits
+                    )
+                    renderUsage(
+                        usageTracker.add(
+                            event.inputUnits,
+                            event.outputUnits,
+                            breakdown
+                        )
+                    )
                 }
             }
         }
@@ -796,34 +802,150 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     }
 
     private fun renderUsage(snapshot: V2UsageSnapshot) {
-        val formatter = NumberFormat.getIntegerInstance()
-        val activeDuration = uncheckpointedDurationMs()
-        totalTokensText.text =
-            "本月累计：${formatter.format(snapshot.monthTokens)} Token · " +
-                "${formatMinutes(snapshot.monthDurationMs + activeDuration)} 分钟"
-        todayTokensText.text =
-            "今日累计：${formatter.format(snapshot.todayTokens)} Token · " +
-                "${formatMinutes(snapshot.todayDurationMs + activeDuration)} 分钟"
-        val price = BuildConfig.V2_PRICE_PER_MILLION_TOKENS
-        estimatedCostText.text = if (price > 0.0) {
-            val totalCost = snapshot.monthTokens * price / 1_000_000.0
-            val todayCost = snapshot.todayTokens * price / 1_000_000.0
-            "估算金额：本月 ¥%.4f · 今日 ¥%.4f".format(totalCost, todayCost)
-        } else {
-            "估算金额：未配置每百万 Token 单价"
-        }
+        usageTable.removeAllViews()
+        addUsageHeader()
+        addUsagePeriod("本月", snapshot.monthBreakdown, snapshot.monthTokens)
+        addUsagePeriod("今日", snapshot.todayBreakdown, snapshot.todayTokens)
+        addUsagePeriod(
+            "本轮",
+            V2TokenBreakdown(
+                sessionInputTextTokens,
+                sessionInputAudioTokens,
+                sessionOutputTextTokens,
+                sessionOutputAudioTokens
+            ),
+            sessionTokens
+        )
     }
 
     private fun renderSessionTokens() {
-        val formatter = NumberFormat.getIntegerInstance()
-        sessionTokensText.text =
-            "本轮对话：${formatter.format(sessionTokens)} Token · " +
-                "${formatMinutes(currentSessionDurationMs())} 分钟\n" +
-                "文本入 ${formatter.format(sessionInputTextTokens)} · " +
-                "语音入 ${formatter.format(sessionInputAudioTokens)} · " +
-                "文本出 ${formatter.format(sessionOutputTextTokens)} · " +
-                "语音出 ${formatter.format(sessionOutputAudioTokens)}"
+        renderUsage(usageTracker.snapshot())
     }
+
+    private fun addUsageHeader() {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(25)
+            )
+        }
+        listOf("", "", "文本入", "语音入", "文本出", "语音出", "合计").forEach { value ->
+            row.addView(createUsageCell(value, bold = true))
+        }
+        usageTable.addView(row)
+    }
+
+    private fun addUsagePeriod(
+        period: String,
+        breakdown: V2TokenBreakdown,
+        totalTokens: Long
+    ) {
+        val group = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(50)
+            )
+        }
+        group.addView(
+            createUsageCell(
+                period,
+                color = ContextCompat.getColor(this, R.color.primary),
+                bold = true
+            )
+        )
+        val values = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 6f)
+        }
+        values.addView(
+            createUsageSubRow(
+                listOf(
+                    "用量",
+                    compactNumber(breakdown.inputText),
+                    compactNumber(breakdown.inputAudio),
+                    compactNumber(breakdown.outputText),
+                    compactNumber(breakdown.outputAudio),
+                    compactNumber(totalTokens)
+                )
+            )
+        )
+        values.addView(
+            createUsageSubRow(
+                listOf(
+                    "价格",
+                    formatCost(breakdown.inputText, INPUT_TEXT_PRICE),
+                    formatCost(breakdown.inputAudio, INPUT_AUDIO_PRICE),
+                    formatCost(breakdown.outputText, OUTPUT_TEXT_PRICE),
+                    formatCost(breakdown.outputAudio, OUTPUT_AUDIO_PRICE),
+                    "¥%.3f".format(totalCost(breakdown))
+                ),
+                priceRow = true
+            )
+        )
+        group.addView(values)
+        usageTable.addView(group)
+    }
+
+    private fun createUsageSubRow(
+        values: List<String>,
+        priceRow: Boolean = false
+    ) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            0,
+            1f
+        )
+        values.forEachIndexed { index, value ->
+            addView(
+                createUsageCell(
+                    value,
+                    color = if (priceRow && index > 0) {
+                        ContextCompat.getColor(this@V2Activity, R.color.primary)
+                    } else {
+                        ContextCompat.getColor(this@V2Activity, R.color.text)
+                    },
+                    bold = priceRow && index > 0
+                )
+            )
+        }
+    }
+
+    private fun createUsageCell(
+        value: String,
+        color: Int = ContextCompat.getColor(this, R.color.text),
+        bold: Boolean = false
+    ) = TextView(this).apply {
+        text = value
+        gravity = Gravity.CENTER
+        setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 8f)
+        setTextColor(color)
+        if (bold) setTypeface(Typeface.DEFAULT, Typeface.BOLD)
+        setBackgroundResource(R.drawable.usage_table_cell_background)
+        setPadding(1, 0, 1, 0)
+        layoutParams = LinearLayout.LayoutParams(
+            0,
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            1f
+        )
+    }
+
+    private fun compactNumber(value: Long): String =
+        NumberFormat.getIntegerInstance().format(value.coerceAtLeast(0L))
+
+    private fun formatCost(tokens: Long, unitPrice: Double): String =
+        "¥%.3f".format(tokens.coerceAtLeast(0L) * unitPrice)
+
+    private fun totalCost(value: V2TokenBreakdown): Double =
+        value.inputText * INPUT_TEXT_PRICE +
+            value.inputAudio * INPUT_AUDIO_PRICE +
+            value.outputText * OUTPUT_TEXT_PRICE +
+            value.outputAudio * OUTPUT_AUDIO_PRICE
+
+    private fun dp(value: Int): Int =
+        (value * resources.displayMetrics.density).toInt()
 
     private fun currentSessionDurationMs(): Long =
         sessionStartedAtMs?.let { startedAt ->
@@ -899,6 +1021,10 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         private const val DEFAULT_WAKE_SENSITIVITY = 3
         private const val MIN_WAKE_SENSITIVITY = 1
         private const val MAX_WAKE_SENSITIVITY = 5
+        private const val INPUT_TEXT_PRICE = 0.000010
+        private const val INPUT_AUDIO_PRICE = 0.000080
+        private const val OUTPUT_TEXT_PRICE = 0.000080
+        private const val OUTPUT_AUDIO_PRICE = 0.000300
         private val PCM_16K_MONO = AudioFormatSpec(16_000, 1, 16, "pcm")
         private val PCM_24K_MONO = AudioFormatSpec(24_000, 1, 16, "pcm")
 
