@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#F7F9FC"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingLeft="20dp"
+        android:paddingTop="56dp"
+        android:paddingRight="20dp"
+        android:paddingBottom="20dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Token 节省设置"
+            android:textColor="@color/text"
+            android:textSize="24sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="保存后立即生效，并在重启应用或手机后恢复。"
+            android:textColor="@color/muted"
+            android:textSize="12sp" />
+
+        <CheckBox
+            android:id="@+id/localWelcomeCheck"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="14dp"
+            android:buttonTint="@color/primary"
+            android:text="使用内置离线 TTS 播放欢迎词"
+            android:textColor="@color/text"
+            android:textSize="14sp" />
+
+        <EditText
+            android:id="@+id/localWelcomeText"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:background="@drawable/settings_background"
+            android:hint="本地欢迎词"
+            android:inputType="text"
+            android:maxLines="1"
+            android:paddingLeft="12dp"
+            android:paddingRight="12dp"
+            android:textColor="@color/text"
+            android:textSize="14sp" />
+
+        <TextView
+            style="@style/TokenSettingLabel"
+            android:text="离线欢迎词音色（模型已内置）" />
+
+        <Spinner
+            android:id="@+id/offlineTtsSpeakerSpinner"
+            style="@style/TokenSettingSpinner" />
+
+        <TextView
+            android:id="@+id/offlineTtsGainLabel"
+            style="@style/TokenSettingLabel"
+            android:text="离线 TTS 总增益：20 倍（范围 1–30 倍）" />
+
+        <SeekBar
+            android:id="@+id/offlineTtsGainSeek"
+            android:layout_width="match_parent"
+            android:layout_height="40dp"
+            android:max="29"
+            android:progress="19"
+            android:progressTint="@color/primary"
+            android:thumbTint="@color/primary" />
+
+        <Button
+            android:id="@+id/previewOfflineTtsButton"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:layout_marginTop="4dp"
+            android:backgroundTint="@color/primary"
+            android:text="试听当前音色"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold" />
+
+        <TextView
+            style="@style/TokenSettingLabel"
+            android:text="默认回答长度" />
+
+        <Spinner
+            android:id="@+id/responseSentenceSpinner"
+            style="@style/TokenSettingSpinner" />
+
+        <TextView
+            style="@style/TokenSettingLabel"
+            android:text="无输出多久后关闭云端（开启本地唤醒时生效）" />
+
+        <Spinner
+            android:id="@+id/idleTimeoutSpinner"
+            style="@style/TokenSettingSpinner" />
+
+        <TextView
+            style="@style/TokenSettingLabel"
+            android:text="重复唤醒保护时间" />
+
+        <Spinner
+            android:id="@+id/wakeCooldownSpinner"
+            style="@style/TokenSettingSpinner" />
+
+        <TextView
+            style="@style/TokenSettingLabel"
+            android:text="历史会话处理" />
+
+        <Spinner
+            android:id="@+id/contextModeSpinner"
+            style="@style/TokenSettingSpinner" />
+
+        <TextView
+            style="@style/TokenSettingLabel"
+            android:text="最多保留对话轮数" />
+
+        <Spinner
+            android:id="@+id/contextRoundsSpinner"
+            style="@style/TokenSettingSpinner" />
+
+        <TextView
+            style="@style/TokenSettingLabel"
+            android:text="单次回答最长时间" />
+
+        <Spinner
+            android:id="@+id/responseTimeoutSpinner"
+            style="@style/TokenSettingSpinner" />
+
+        <Button
+            android:id="@+id/saveTokenSettingsButton"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="18dp"
+            android:backgroundTint="@color/primary"
+            android:text="保存设置"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/cancelTokenSettingsButton"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="6dp"
+            android:text="取消"
+            android:textAllCaps="false" />
+    </LinearLayout>
+</ScrollView>

@@ -15,6 +15,9 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <queries>
         <package android:name="com.larus.nova" />
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
     </queries>
 
     <application
@@ -38,6 +41,10 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".v2.V2TokenSavingSettingsActivity"
+            android:exported="false" />
 
         <activity
             android:name=".ModeSelectionActivity"

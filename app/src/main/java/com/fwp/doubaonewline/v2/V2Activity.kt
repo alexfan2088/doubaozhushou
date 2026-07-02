@@ -29,7 +29,6 @@ import android.text.style.StyleSpan
 import android.view.Gravity
 import android.widget.Button
 import android.widget.CheckBox
-import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
@@ -50,7 +49,6 @@ import java.util.UUID
 class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     private lateinit var statusText: TextView
     private lateinit var detailText: TextView
-    private lateinit var welcomeInput: EditText
     private lateinit var stopButton: Button
     private lateinit var usageTable: LinearLayout
     private lateinit var selectedBluetoothText: TextView
@@ -64,6 +62,9 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     private lateinit var audioMonitor: AudioDeviceMonitor
     private lateinit var audioRouteManager: AudioRouteManager
     private lateinit var wakeWordDetector: OfflineWakeWordDetector
+    private lateinit var tokenSavingSettings: V2TokenSavingSettings
+    private lateinit var localWelcomeSpeaker: V2LocalWelcomeSpeaker
+    private var tokenSavingConfig = V2TokenSavingConfig()
     private val handler = Handler(Looper.getMainLooper())
     private var startAfterPermission = false
     private var activeRouteKey: String? = null
@@ -82,6 +83,10 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     private var activeConnectionDetail = ""
     private var activeWakeInput: AudioDeviceInfo? = null
     private var cloudSessionActive = false
+    private var localWelcomeInProgress = false
+    private var lastWakeAcceptedAtMs = Long.MIN_VALUE
+    private var completedResponseRounds = 0
+    private var sessionStartGeneration = 0L
 
     private val connectionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -123,7 +128,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
                 if (coordinator.state != RealtimeVoiceState.IDLE) {
                     coordinator.stop(DisconnectReason.SERVICE_ERROR)
                 }
-                startSession(resetSession = false, announceWelcome = false)
+                startSession(resetSession = false, playWelcome = false)
             }
         }
     }
@@ -132,13 +137,22 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         tryEnterLocalWakeStandby()
     }
 
+    private val responseTimeout: Runnable = Runnable {
+        if (cloudSessionActive && client.state == RealtimeVoiceState.MODEL_SPEAKING) {
+            client.interrupt()
+            statusText.text = "回答已到时间"
+            detailText.text = "$activeConnectionDetail\n已停止本次长回答，可以继续提问。"
+        }
+    }
+
     private fun tryEnterLocalWakeStandby() {
         if (
             localWakeCheck.isChecked &&
             !manuallyPaused &&
             !userRequestedStop &&
             activeRouteKey != null &&
-            cloudSessionActive
+            cloudSessionActive &&
+            !localWelcomeInProgress
         ) {
             if (
                 client.state == RealtimeVoiceState.MODEL_SPEAKING ||
@@ -193,7 +207,6 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
 
         statusText = findViewById(R.id.v2StatusText)
         detailText = findViewById(R.id.v2DetailText)
-        welcomeInput = findViewById(R.id.v2WelcomeInput)
         stopButton = findViewById(R.id.v2StopButton)
         usageTable = findViewById(R.id.v2UsageTable)
         selectedBluetoothText = findViewById(R.id.v2SelectedBluetoothText)
@@ -212,6 +225,9 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         client.setListener(this)
         coordinator = V2SessionCoordinator(LocalTestCredentialProvider, client)
         usageTracker = V2UsageTracker(this)
+        tokenSavingSettings = V2TokenSavingSettings(this)
+        tokenSavingConfig = tokenSavingSettings.load()
+        localWelcomeSpeaker = V2LocalWelcomeSpeaker(this)
         audioRouteManager = AudioRouteManager(this)
         wakeWordDetector = OfflineWakeWordDetector(
             this,
@@ -220,19 +236,17 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
                     if (
                         localWakeCheck.isChecked &&
                         !manuallyPaused &&
-                        activeRouteKey != null
+                        activeRouteKey != null &&
+                        !localWelcomeInProgress &&
+                        !cloudSessionActive &&
+                        wakeCooldownElapsed()
                     ) {
-                        playWakeConfirmationTone()
+                        lastWakeAcceptedAtMs = SystemClock.elapsedRealtime()
                         statusText.text = "已听到豆包豆包"
-                        detailText.text = "正在连接云端语音模型…"
-                        handler.postDelayed(
-                            {
-                                startSession(
-                                    resetSession = false,
-                                    announceWelcome = true
-                                )
-                            },
-                            WAKE_CONNECT_DELAY_MS
+                        detailText.text = "正在准备云端语音模型…"
+                        startSession(
+                            resetSession = false,
+                            playWelcome = true
                         )
                     }
                 }
@@ -306,13 +320,16 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
                     activeRouteKey != null &&
                     !cloudSessionActive
                 ) {
-                    startSession(resetSession = false, announceWelcome = false)
+                    startSession(resetSession = false, playWelcome = false)
                 }
             }
         }
 
         findViewById<Button>(R.id.v2SelectBluetoothButton).setOnClickListener {
             chooseBluetoothDevice()
+        }
+        findViewById<Button>(R.id.v2TokenSettingsButton).setOnClickListener {
+            startActivity(Intent(this, V2TokenSavingSettingsActivity::class.java))
         }
         stopButton.setOnClickListener {
             if (manuallyPaused) resumeSession() else pauseSession()
@@ -326,6 +343,14 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         audioMonitor.start()
         handler.post(periodicRouteCheck)
         handler.post(durationUiTick)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::tokenSavingSettings.isInitialized) {
+            tokenSavingConfig = tokenSavingSettings.load()
+            if (cloudSessionActive) scheduleLocalWakeStandby()
+        }
     }
 
     private fun ensurePermissionAndStart() {
@@ -342,13 +367,15 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
 
     private fun startSession(
         resetSession: Boolean = true,
-        announceWelcome: Boolean = true
+        playWelcome: Boolean = true
     ) {
         if (activeRouteKey == null) return
         handler.removeCallbacks(enterLocalWakeStandby)
+        handler.removeCallbacks(responseTimeout)
         wakeWordDetector.stop()
         userRequestedStop = false
         V2VoiceForegroundService.start(this)
+        val generation = ++sessionStartGeneration
         if (resetSession) {
             sessionTokens = 0L
             sessionInputTextTokens = 0L
@@ -359,15 +386,46 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
             sessionStartedAtMs = startedAt
             lastDurationCheckpointAtMs = startedAt
             finishedSessionDurationMs = 0L
+            completedResponseRounds = 0
         }
         renderSessionTokens()
+        if (playWelcome && tokenSavingConfig.localWelcomeEnabled) {
+            localWelcomeInProgress = true
+            statusText.text = "已唤醒"
+            detailText.text = "正在播放本地欢迎词…"
+            localWelcomeSpeaker.speak(
+                tokenSavingConfig.localWelcomeText,
+                tokenSavingConfig.offlineTtsSpeakerId,
+                tokenSavingConfig.offlineTtsGain.toFloat()
+            ) { success ->
+                if (generation != sessionStartGeneration) return@speak
+                localWelcomeInProgress = false
+                if (!success) playWakeConfirmationTone()
+                connectCloudSession(generation)
+            }
+        } else {
+            if (playWelcome) playWakeConfirmationTone()
+            connectCloudSession(generation)
+        }
+    }
+
+    private fun connectCloudSession(generation: Long) {
+        if (
+            generation != sessionStartGeneration ||
+            manuallyPaused ||
+            userRequestedStop ||
+            activeRouteKey == null
+        ) {
+            return
+        }
         setConnectingUi()
+        completedResponseRounds = 0
         coordinator.start { credentials ->
             RealtimeVoiceConfig(
                 credentials = credentials,
                 userId = getOrCreateUserId(),
-                systemPrompt = "你是一个自然、简洁、有帮助的中文语音助手。",
-                welcomeText = if (announceWelcome) welcomeInput.text.toString() else "",
+                systemPrompt = tokenSavingConfig.systemPrompt(),
+                welcomeText = "",
                 inputFormat = PCM_16K_MONO,
                 outputFormat = PCM_24K_MONO
             )
@@ -405,8 +463,17 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     private fun scheduleLocalWakeStandby() {
         handler.removeCallbacks(enterLocalWakeStandby)
         if (localWakeCheck.isChecked && cloudSessionActive) {
-            handler.postDelayed(enterLocalWakeStandby, LOCAL_WAKE_IDLE_TIMEOUT_MS)
+            handler.postDelayed(
+                enterLocalWakeStandby,
+                tokenSavingConfig.idleTimeoutSeconds * 1_000L
+            )
         }
+    }
+
+    private fun wakeCooldownElapsed(): Boolean {
+        if (lastWakeAcceptedAtMs == Long.MIN_VALUE) return true
+        return SystemClock.elapsedRealtime() - lastWakeAcceptedAtMs >=
+            tokenSavingConfig.wakeCooldownSeconds * 1_000L
     }
 
     private fun startLocalWakeListening() {
@@ -563,8 +630,10 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     private fun pauseSession() {
         manuallyPaused = true
         userRequestedStop = true
+        cancelPendingLocalWelcome()
         handler.removeCallbacks(reconnectSession)
         handler.removeCallbacks(enterLocalWakeStandby)
+        handler.removeCallbacks(responseTimeout)
         wakeWordDetector.stop()
         cloudSessionActive = false
         finishSessionDuration()
@@ -583,14 +652,16 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         }
         manuallyPaused = false
         userRequestedStop = false
-        startSession(resetSession = false, announceWelcome = false)
+        startSession(resetSession = false, playWelcome = false)
     }
 
     private fun stopSession() {
         manuallyPaused = false
         userRequestedStop = true
+        cancelPendingLocalWelcome()
         handler.removeCallbacks(reconnectSession)
         handler.removeCallbacks(enterLocalWakeStandby)
+        handler.removeCallbacks(responseTimeout)
         wakeWordDetector.stop()
         cloudSessionActive = false
         finishSessionDuration()
@@ -636,6 +707,8 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         if (routeKey == null) {
             handler.removeCallbacks(reconnectSession)
             handler.removeCallbacks(enterLocalWakeStandby)
+            handler.removeCallbacks(responseTimeout)
+            cancelPendingLocalWelcome()
             wakeWordDetector.stop()
             cloudSessionActive = false
             V2VoiceForegroundService.stop(this)
@@ -651,6 +724,8 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
 
         if (routeKey != activeRouteKey) {
             handler.removeCallbacks(enterLocalWakeStandby)
+            handler.removeCallbacks(responseTimeout)
+            cancelPendingLocalWelcome()
             wakeWordDetector.stop()
             cloudSessionActive = false
             if (coordinator.state != RealtimeVoiceState.IDLE) {
@@ -694,6 +769,12 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         handler.postDelayed({ inspectAudioRoute() }, 3_000L)
     }
 
+    private fun cancelPendingLocalWelcome() {
+        sessionStartGeneration++
+        localWelcomeInProgress = false
+        if (::localWelcomeSpeaker.isInitialized) localWelcomeSpeaker.stop()
+    }
+
     override fun onEvent(event: RealtimeVoiceEvent) {
         runOnUiThread {
             when (event) {
@@ -708,6 +789,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
                     scheduleLocalWakeStandby()
                 }
                 RealtimeVoiceEvent.UserSpeechStarted -> {
+                    handler.removeCallbacks(responseTimeout)
                     showActiveUi("正在听你说话", "$activeConnectionDetail\n检测到用户语音。")
                 }
                 RealtimeVoiceEvent.UserSpeechEnded -> {
@@ -715,15 +797,33 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
                 }
                 RealtimeVoiceEvent.ModelResponseStarted -> {
                     handler.removeCallbacks(enterLocalWakeStandby)
+                    handler.removeCallbacks(responseTimeout)
+                    if (tokenSavingConfig.maxResponseSeconds != V2TokenSavingConfig.UNLIMITED) {
+                        handler.postDelayed(
+                            responseTimeout,
+                            tokenSavingConfig.maxResponseSeconds * 1_000L
+                        )
+                    }
                     showActiveUi("豆包正在回答", "$activeConnectionDetail\n直接开口即可打断。")
                 }
                 RealtimeVoiceEvent.ModelResponseEnded -> {
+                    handler.removeCallbacks(responseTimeout)
+                    completedResponseRounds++
                     showActiveUi("正在聆听", activeConnectionDetail)
-                    scheduleLocalWakeStandby()
+                    if (
+                        tokenSavingConfig.contextRetentionMode ==
+                        ContextRetentionMode.RESET_AFTER_LIMIT &&
+                        completedResponseRounds >= tokenSavingConfig.maxContextRounds
+                    ) {
+                        rebuildCloudContext()
+                    } else {
+                        scheduleLocalWakeStandby()
+                    }
                 }
                 is RealtimeVoiceEvent.Failure -> {
                     cloudSessionActive = false
                     handler.removeCallbacks(enterLocalWakeStandby)
+                    handler.removeCallbacks(responseTimeout)
                     coordinator.stop(DisconnectReason.SERVICE_ERROR)
                     if (!userRequestedStop && activeRouteKey != null) {
                         scheduleReconnect("${event.code}: ${event.message}")
@@ -758,6 +858,25 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
                 }
             }
         }
+    }
+
+    private fun rebuildCloudContext() {
+        if (
+            manuallyPaused ||
+            userRequestedStop ||
+            activeRouteKey == null
+        ) {
+            return
+        }
+        cloudSessionActive = false
+        completedResponseRounds = 0
+        coordinator.stop(DisconnectReason.SERVICE_ERROR)
+        statusText.text = "正在清理历史会话"
+        detailText.text = "已达到设定轮数，正在建立新的精简会话…"
+        handler.postDelayed(
+            { startSession(resetSession = false, playWelcome = false) },
+            CONTEXT_RECONNECT_DELAY_MS
+        )
     }
 
     private fun setConnectingUi() {
@@ -980,7 +1099,11 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
 
     override fun onDestroy() {
         userRequestedStop = true
+        cancelPendingLocalWelcome()
         handler.removeCallbacksAndMessages(null)
+        if (::localWelcomeSpeaker.isInitialized) {
+            localWelcomeSpeaker.shutdown()
+        }
         if (::wakeWordDetector.isInitialized) {
             wakeWordDetector.stop()
         }
@@ -1012,10 +1135,9 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         private const val DURATION_UI_INTERVAL_MS = 1_000L
         private const val DURATION_CHECKPOINT_INTERVAL_MS = 5_000L
         private const val RECONNECT_DELAY_MS = 3_000L
-        private const val LOCAL_WAKE_IDLE_TIMEOUT_MS = 30_000L
         private const val AUDIO_HANDOFF_DELAY_MS = 600L
-        private const val WAKE_CONNECT_DELAY_MS = 350L
         private const val BUSY_RECHECK_DELAY_MS = 1_000L
+        private const val CONTEXT_RECONNECT_DELAY_MS = 500L
         private const val KEY_LOCAL_WAKE_ENABLED = "local_wake_enabled"
         private const val KEY_WAKE_SENSITIVITY = "wake_sensitivity"
         private const val DEFAULT_WAKE_SENSITIVITY = 3

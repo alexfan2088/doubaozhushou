@@ -7,4 +7,21 @@
         <item name="android:navigationBarColor">@color/surface</item>
         <item name="android:statusBarColor">@color/surface</item>
     </style>
+
+    <style name="TokenSettingLabel">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">12dp</item>
+        <item name="android:textColor">@color/text</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TokenSettingSpinner">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">46dp</item>
+        <item name="android:background">@drawable/settings_background</item>
+        <item name="android:paddingLeft">10dp</item>
+        <item name="android:paddingRight">10dp</item>
+    </style>
 </resources>
