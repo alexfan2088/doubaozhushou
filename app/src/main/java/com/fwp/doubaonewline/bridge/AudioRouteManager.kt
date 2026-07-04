@@ -62,34 +62,29 @@ class AudioRouteManager(
         previousUsbReady = snapshot.ready
         val usbEnabled = prefs.getBoolean(BridgeContract.PREF_USB_ENABLED, true)
         val bluetoothEnabled = prefs.getBoolean(BridgeContract.PREF_BLUETOOTH_ENABLED, false)
-        val lastRoute = prefs.getString(
-            BridgeContract.PREF_LAST_AUDIO_ROUTE,
-            BridgeContract.ROUTE_USB
-        )
-
-        if (
-            lastRoute == BridgeContract.ROUTE_USB &&
-            usbEnabled &&
-            snapshot.ready
-        ) {
+        // A connected Type-C duplex device always wins, regardless of the last
+        // manually selected Bluetooth route.
+        if (usbEnabled && snapshot.ready) {
             val device = availableCommunicationDevices().firstOrNull(::isUsb)
             return activate(device, Kind.USB, device?.productName?.toString() ?: "Type-C USB 音频")
         }
 
         if (bluetoothEnabled && hasBluetoothPermission()) {
             val selectedKey = selectedBluetoothKey()
+            if (selectedKey == null || !selectedBluetoothConnected()) {
+                clear()
+                return Selection(Kind.NONE, "当前选择的蓝牙设备未连接", false)
+            }
             val candidate = bluetoothCandidates().firstOrNull { it.key == selectedKey }
             if (candidate != null) {
                 val selectedHfpConnected = selectedBluetoothHfpConnected()
                 if (!selectedHfpConnected && candidate.device == null) {
                     releaseBluetoothCommunication()
-                    if (!usbEnabled || !snapshot.ready) {
-                        return Selection(
-                            Kind.BLUETOOTH,
-                            candidate.displayLabel,
-                            false
-                        )
-                    }
+                    return Selection(
+                        Kind.BLUETOOTH,
+                        candidate.displayLabel,
+                        false
+                    )
                 } else {
                     val communicationDevice = candidate.device
                         ?: if (selectedHfpConnected) {
@@ -104,11 +99,6 @@ class AudioRouteManager(
                     )
                 }
             }
-        }
-
-        if (usbEnabled && snapshot.ready) {
-            val device = availableCommunicationDevices().firstOrNull(::isUsb)
-            return activate(device, Kind.USB, device?.productName?.toString() ?: "Type-C USB 音频")
         }
 
         clear()

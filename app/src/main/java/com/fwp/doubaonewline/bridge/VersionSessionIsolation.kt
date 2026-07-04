@@ -17,13 +17,13 @@ object VersionSessionIsolation {
     }
 
     fun enterV2(context: Context) {
-        context.stopService(Intent(context, NewlineBridgeService::class.java))
+        NewlineBridgeService.stopSafely(context)
         V3VoiceForegroundService.stop(context)
         DoubaoAccessibilityService.cancelCallStart()
     }
 
     fun enterV3(context: Context) {
-        context.stopService(Intent(context, NewlineBridgeService::class.java))
+        NewlineBridgeService.stopSafely(context)
         V2VoiceForegroundService.stop(context)
         DoubaoAccessibilityService.cancelCallStart()
     }

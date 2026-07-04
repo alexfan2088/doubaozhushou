@@ -37,8 +37,6 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
     private lateinit var modelText: TextView
     private lateinit var routeText: TextView
     private lateinit var selectedBluetoothText: TextView
-    private lateinit var transcriptText: TextView
-    private lateinit var responseText: TextView
     private lateinit var pauseButton: Button
     private lateinit var settings: V3Settings
     private lateinit var modelManager: V3ModelManager
@@ -57,9 +55,11 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
     private var pendingBluetoothSelection = false
     private var callPaused = false
     private var terminating = false
+    private var activeRouteKey: String? = null
     private val handler = Handler(Looper.getMainLooper())
     private val callCheck = object : Runnable {
         override fun run() {
+            inspectAudioRoute()
             val inCall = isPhoneCallActive()
             if (inCall && !callPaused) {
                 callPaused = true
@@ -103,8 +103,6 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
         modelText = findViewById(R.id.v3ModelText)
         routeText = findViewById(R.id.v3RouteText)
         selectedBluetoothText = findViewById(R.id.v3SelectedBluetoothText)
-        transcriptText = findViewById(R.id.v3TranscriptText)
-        responseText = findViewById(R.id.v3ResponseText)
         pauseButton = findViewById(R.id.v3PauseButton)
         settings = V3Settings(this)
         config = settings.load()
@@ -170,13 +168,6 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
 
     private fun startIfReady() {
         if (terminating || paused || callPaused || modelLoading) return
-        if (
-            ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
-            return
-        }
         val files = modelManager.installed(config.selectedModel)
         if (files == null) {
             statusText.text = "本地模型未安装"
@@ -187,13 +178,28 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
         if (loadedModel != config.selectedModel) {
             modelLoading = true
             statusText.text = "正在加载 DeepSeek ${config.selectedModel.parameters}"
-            detailText.text = "首次加载可能需要几秒，请稍候。"
+            detailText.text = "模型加载与音频连接分开处理，请稍候。"
+            renderModelSummary()
             deepSeek.load(
                 files.llm,
                 config.selectedModel.threads,
                 config.maxResponseSentences,
                 this
             )
+            return
+        }
+        if (activeRouteKey == null) {
+            statusText.text = "等待设备连接"
+            detailText.text = "连接 Type-C 或当前选择的蓝牙设备后自动启动 V3 会话。"
+            pauseButton.isEnabled = false
+            renderModelSummary()
+            return
+        }
+        if (
+            ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            microphonePermission.launch(Manifest.permission.RECORD_AUDIO)
             return
         }
         if (asr == null) {
@@ -206,11 +212,11 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
 
     override fun onModelReady() {
         if (terminating || isFinishing || isDestroyed) {
-            deepSeek.unload()
             return
         }
         modelLoading = false
         loadedModel = config.selectedModel
+        renderModelSummary()
         startIfReady()
     }
 
@@ -221,7 +227,6 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
                 if (!config.allowBargeIn || isLikelyPlaybackEcho(text)) return@runOnUiThread
                 interruptForUserSpeech()
             }
-            transcriptText.text = text
             statusText.text = "正在识别"
         }
     }
@@ -231,11 +236,9 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
             if (paused || (speaking && !config.allowBargeIn)) return@runOnUiThread
             if (speaking && isLikelyPlaybackEcho(text)) return@runOnUiThread
             if ((speaking || thinking) && config.allowBargeIn) interruptForUserSpeech()
-            transcriptText.text = text
             thinking = true
             statusText.text = "DeepSeek 正在思考"
             detailText.text = "本地推理中，不消耗云端 Token。"
-            responseText.text = ""
             deepSeek.generate(text, config.contextRounds, this)
         }
     }
@@ -249,15 +252,13 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
     }
 
     override fun onPartialAnswer(text: String) {
-        if (terminating) return
-        responseText.text = text
+        // Intermediate text is intentionally hidden; V3 speaks only the final answer.
     }
 
     override fun onFinalAnswer(text: String) {
         if (terminating) return
         thinking = false
         if (paused) return
-        responseText.text = text
         speaking = true
         currentSpokenText = text
         statusText.text = "正在播放本地回答"
@@ -336,18 +337,30 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
         if (unloadModel) {
             deepSeek.unload()
             loadedModel = null
+            renderModelSummary()
         }
     }
 
     private fun shutdownSession() {
         terminating = true
-        stopEngines(unloadModel = true)
+        stopEngines(unloadModel = false)
         audioRouteManager.clear()
     }
 
     private fun inspectAudioRoute() {
         if (!::audioMonitor.isInitialized) return
-        val selection = audioRouteManager.select(audioMonitor.snapshot())
+        val snapshot = audioMonitor.snapshot()
+        val selection = audioRouteManager.select(snapshot)
+        val routeKey = when (selection.kind) {
+            AudioRouteManager.Kind.USB -> if (snapshot.ready) "usb" else null
+            AudioRouteManager.Kind.BLUETOOTH ->
+                if (audioRouteManager.selectedBluetoothConnected()) {
+                    "bluetooth:${audioRouteManager.selectedBluetoothKey().orEmpty()}"
+                } else {
+                    null
+                }
+            AudioRouteManager.Kind.NONE -> null
+        }
         routeText.text = when (selection.kind) {
             AudioRouteManager.Kind.USB -> if (selection.routeAccepted) {
                 "V3 已通过数据线连接，使用 Type-C 设备拾音。"
@@ -359,7 +372,21 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
             } else {
                 "所选蓝牙设备无 HFP 拾音，使用手机麦克风。"
             }
-            AudioRouteManager.Kind.NONE -> "V3 使用手机麦克风和当前系统播放设备。"
+            AudioRouteManager.Kind.NONE ->
+                "当前选择的蓝牙设备未连接，且未检测到 Type-C 音频设备。"
+        }
+        if (routeKey != activeRouteKey) {
+            activeRouteKey = routeKey
+            if (routeKey == null) {
+                stopEngines(unloadModel = false)
+                if (!modelLoading) {
+                    statusText.text = "等待设备连接"
+                    detailText.text =
+                        "连接 Type-C 或当前选择的蓝牙设备后自动启动 V3 会话。"
+                }
+            } else {
+                startIfReady()
+            }
         }
     }
 
@@ -461,8 +488,16 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
 
     private fun renderModelSummary() {
         val recommendation = settings.recommendation()
-        modelText.text = "当前选择：${config.selectedModel.parameters} · 系统推荐：" +
-            "${recommendation.recommendedModel.parameters} · " +
+        val installed = modelManager.isInstalled(config.selectedModel)
+        val runtime = when {
+            modelLoading -> "正在加载"
+            loadedModel == config.selectedModel -> "已加载，可直接复用"
+            else -> "未加载"
+        }
+        modelText.text =
+            "当前模型：DeepSeek ${config.selectedModel.parameters}\n" +
+            "模型文件：${if (installed) "已安装" else "未安装"} · 运行状态：$runtime\n" +
+            "系统推荐：${recommendation.recommendedModel.parameters} · " +
             if (config.allowBargeIn) "允许语音打断" else "半双工"
     }
 
@@ -483,7 +518,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         shutdownSession()
-        deepSeek.shutdown()
+        deepSeek.shutdown(keepModelLoaded = true)
         tts.shutdown()
         modelManager.close()
         super.onDestroy()

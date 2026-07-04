@@ -82,13 +82,11 @@ class MainActivity : AppCompatActivity() {
         setupReadyGreeting()
 
         findViewById<Button>(R.id.switchToV2Button).setOnClickListener {
-            stopService(Intent(this, NewlineBridgeService::class.java))
             VersionSessionIsolation.enterV2(this)
             startActivity(Intent(this, V2Activity::class.java))
             finish()
         }
         findViewById<Button>(R.id.switchToV3Button).setOnClickListener {
-            stopService(Intent(this, NewlineBridgeService::class.java))
             VersionSessionIsolation.enterV3(this)
             startActivity(Intent(this, V3Activity::class.java))
             finish()

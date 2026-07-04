@@ -63,6 +63,10 @@ class NewlineBridgeService : Service(), TextToSpeech.OnInitListener {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            BridgeContract.ACTION_STOP -> {
+                stopSelf()
+                return START_NOT_STICKY
+            }
             BridgeContract.ACTION_USB_DETACHED -> {
                 inspectCurrentState()
             }
@@ -288,6 +292,13 @@ class NewlineBridgeService : Service(), TextToSpeech.OnInitListener {
         fun start(context: Context, action: String = BridgeContract.ACTION_START) {
             val intent = Intent(context, NewlineBridgeService::class.java).setAction(action)
             context.startForegroundService(intent)
+        }
+
+        fun stopSafely(context: Context) {
+            val intent = Intent(context, NewlineBridgeService::class.java)
+                .setAction(BridgeContract.ACTION_STOP)
+            runCatching { context.startService(intent) }
+                .onFailure { context.stopService(intent) }
         }
     }
 }

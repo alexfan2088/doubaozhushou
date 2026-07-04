@@ -47,46 +47,36 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
+            android:layout_marginTop="8dp"
             android:background="@drawable/status_background"
-            android:orientation="vertical"
-            android:padding="16dp">
+            android:orientation="vertical">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="V3 会话状态"
-                android:textColor="@color/text"
-                android:textSize="14sp"
+                android:text="当前状态"
+                android:textColor="@color/primary"
+                android:textSize="11sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/v3StatusText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
+                android:layout_marginTop="2dp"
                 android:text="正在检查本地模型"
-                android:textColor="@color/primary"
-                android:textSize="18sp"
+                android:textColor="@color/text"
+                android:textSize="17sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/v3DetailText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
+                android:layout_marginTop="3dp"
                 android:textColor="@color/muted"
                 android:textSize="12sp" />
         </LinearLayout>
-
-        <TextView
-            android:id="@+id/v3ModelText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:textColor="@color/text"
-            android:textSize="13sp"
-            android:textStyle="bold" />
 
         <TextView
             android:id="@+id/v3SelectedBluetoothText"
@@ -118,28 +108,17 @@
             android:textStyle="bold" />
 
         <TextView
-            android:id="@+id/v3TranscriptText"
+            android:id="@+id/v3ModelText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
             android:background="@drawable/settings_background"
-            android:minHeight="54dp"
+            android:minHeight="110dp"
             android:padding="10dp"
-            android:text="识别内容将在这里显示"
+            android:text="正在检查本地模型"
             android:textColor="@color/text"
-            android:textSize="13sp" />
-
-        <TextView
-            android:id="@+id/v3ResponseText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:background="@drawable/settings_background"
-            android:minHeight="72dp"
-            android:padding="10dp"
-            android:text="本地回答将在这里显示"
-            android:textColor="@color/text"
-            android:textSize="13sp" />
+            android:textSize="13sp"
+            android:textStyle="bold" />
 
         <Button
             android:id="@+id/v3PauseButton"

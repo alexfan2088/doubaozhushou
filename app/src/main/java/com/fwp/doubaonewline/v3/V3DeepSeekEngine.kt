@@ -42,6 +42,15 @@ class V3DeepSeekEngine(context: Context) {
         cancelGeneration()
         scope.launch {
             runCatching {
+                if (
+                    sharedLoadedModelPath == model.absolutePath &&
+                    engine.state.value is InferenceEngine.State.ModelReady
+                ) {
+                    loadedModel = model
+                    systemPrompt = buildSystemPrompt(maxSentences)
+                    completedRounds = 0
+                    return@runCatching
+                }
                 unloadInternal()
                 engine.state.filter {
                     it is InferenceEngine.State.Initialized ||
@@ -52,6 +61,7 @@ class V3DeepSeekEngine(context: Context) {
                 systemPrompt = buildSystemPrompt(maxSentences)
                 engine.setSystemPrompt(systemPrompt)
                 loadedModel = model
+                sharedLoadedModelPath = model.absolutePath
                 completedRounds = 0
             }.onSuccess {
                 withContext(Dispatchers.Main) { listener.onModelReady() }
@@ -113,15 +123,19 @@ class V3DeepSeekEngine(context: Context) {
         scope.launch { unloadInternal() }
     }
 
-    fun shutdown() {
+    fun shutdown(keepModelLoaded: Boolean = false) {
         cancelGeneration()
-        runCatching { engine.cleanUp() }
+        if (!keepModelLoaded) {
+            runCatching { engine.cleanUp() }
+            sharedLoadedModelPath = null
+        }
         scope.cancel()
     }
 
     private fun unloadInternal() {
         runCatching { engine.cleanUp() }
         loadedModel = null
+        sharedLoadedModelPath = null
     }
 
     private fun buildSystemPrompt(maxSentences: Int) =
@@ -140,5 +154,6 @@ class V3DeepSeekEngine(context: Context) {
 
     companion object {
         private const val MAX_OUTPUT_TOKENS = 128
+        @Volatile private var sharedLoadedModelPath: String? = null
     }
 }
