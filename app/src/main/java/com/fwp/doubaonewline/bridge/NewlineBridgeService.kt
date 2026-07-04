@@ -144,6 +144,16 @@ class NewlineBridgeService : Service(), TextToSpeech.OnInitListener {
     }
 
     private fun handleAudioSnapshot(snapshot: AudioDeviceMonitor.Snapshot) {
+        val mode = getSharedPreferences(BridgeContract.PREFS, MODE_PRIVATE)
+            .getString(BridgeContract.PREF_MODE, BridgeContract.MODE_V1)
+
+        if (mode != BridgeContract.MODE_V1) {
+            Log.i(TAG, "Skip V1 Doubao launch because current mode=$mode")
+            DoubaoAccessibilityService.cancelCallStart()
+            launchedRouteKey = null
+//            publish("V1 已暂停", "当前处于 $mode 模式，V1 不启动豆包。")
+            return
+        }
         val selection = audioRouteManager.select(snapshot)
         val selectedBluetoothConnected = audioRouteManager.selectedBluetoothConnected()
         val routeKey = when (selection.kind) {
