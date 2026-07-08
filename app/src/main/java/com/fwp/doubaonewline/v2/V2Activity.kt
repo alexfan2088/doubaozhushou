@@ -43,8 +43,8 @@ import com.fwp.doubaonewline.automation.DoubaoAccessibilityService
 import com.fwp.doubaonewline.bridge.AudioDeviceMonitor
 import com.fwp.doubaonewline.bridge.AudioRouteManager
 import com.fwp.doubaonewline.bridge.BridgeContract
-import com.fwp.doubaonewline.bridge.NewlineBridgeService
 import com.fwp.doubaonewline.bridge.VersionSessionIsolation
+import com.fwp.doubaonewline.bridge.VersionRouter
 import com.fwp.doubaonewline.v3.V3Activity
 import java.text.NumberFormat
 import java.util.UUID
@@ -242,11 +242,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         wakeSensitivityText = findViewById(R.id.v2WakeSensitivityText)
         wakeSensitivitySeek = findViewById(R.id.v2WakeSensitivitySeek)
 
-        getSharedPreferences(BridgeContract.PREFS, MODE_PRIVATE)
-            .edit()
-            .putBoolean(BridgeContract.PREF_ENABLED, false)
-            .putString(BridgeContract.PREF_MODE, BridgeContract.MODE_V2)
-            .apply()
+        VersionRouter.saveSelectedMode(this, BridgeContract.MODE_V2)
         VersionSessionIsolation.enterV2(this)
         client = VolcengineRealtimeVoiceClient(this)
         client.setListener(this)
@@ -366,12 +362,14 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         findViewById<Button>(R.id.switchToV1Button).setOnClickListener {
             stopSession()
             VersionSessionIsolation.enterV1(this)
+            VersionRouter.saveSelectedMode(this, BridgeContract.MODE_V1)
             startActivity(Intent(this, MainActivity::class.java))
             finish()
         }
         findViewById<Button>(R.id.switchToV3Button).setOnClickListener {
             stopSession()
             VersionSessionIsolation.enterV3(this)
+            VersionRouter.saveSelectedMode(this, BridgeContract.MODE_V3)
             startActivity(Intent(this, V3Activity::class.java))
             finish()
         }

@@ -29,11 +29,7 @@
         android:theme="@style/Theme.DoubaoNewline">
 
         <activity
-            android:name=".MainActivity"
-            android:exported="false" />
-
-        <activity
-            android:name=".v2.V2Activity"
+            android:name=".AppLauncherActivity"
             android:exported="true"
             android:launchMode="singleTask">
             <intent-filter>
@@ -41,6 +37,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".v2.V2Activity"
+            android:exported="false"
+            android:launchMode="singleTask" />
 
         <activity
             android:name=".v2.V2TokenSavingSettingsActivity"
@@ -79,6 +84,15 @@
             android:foregroundServiceType="microphone" />
 
         <service
+            android:name=".bridge.AutoStartMonitorService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Keeps a lightweight monitor active so selected USB or Bluetooth audio connections can restore the chosen assistant version." />
+        </service>
+
+        <service
             android:name=".automation.DoubaoAccessibilityService"
             android:exported="false"
             android:label="豆包连续对话自动启动"
@@ -92,20 +106,18 @@
         </service>
 
         <receiver
-            android:name=".receiver.BootReceiver"
+            android:name=".receiver.ExternalTriggerReceiver"
             android:enabled="true"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
-            </intent-filter>
-        </receiver>
-
-        <receiver
-            android:name=".receiver.UsbDetachReceiver"
-            android:exported="true">
-            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
                 <action android:name="android.hardware.usb.action.USB_DEVICE_DETACHED" />
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+                <action android:name="android.bluetooth.device.action.ACL_DISCONNECTED" />
+                <action android:name="android.bluetooth.headset.profile.action.CONNECTION_STATE_CHANGED" />
+                <action android:name="android.bluetooth.a2dp.profile.action.CONNECTION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
     </application>

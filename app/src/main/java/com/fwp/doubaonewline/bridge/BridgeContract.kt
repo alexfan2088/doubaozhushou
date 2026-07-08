@@ -3,6 +3,8 @@ package com.fwp.doubaonewline.bridge
 object BridgeContract {
     const val ACTION_START = "com.fwp.doubaonewline.action.START"
     const val ACTION_STOP = "com.fwp.doubaonewline.action.STOP"
+    const val ACTION_MONITOR_START = "com.fwp.doubaonewline.action.MONITOR_START"
+    const val ACTION_MONITOR_TRIGGER = "com.fwp.doubaonewline.action.MONITOR_TRIGGER"
     const val ACTION_USB_DETACHED = "com.fwp.doubaonewline.action.USB_DETACHED"
     const val ACTION_STATUS = "com.fwp.doubaonewline.action.STATUS"
     const val ACTION_END_DOUBAO_CALL = "com.fwp.doubaonewline.action.END_DOUBAO_CALL"

@@ -28,6 +28,7 @@ import com.fwp.doubaonewline.bridge.AudioDeviceMonitor
 import com.fwp.doubaonewline.bridge.AudioRouteManager
 import com.fwp.doubaonewline.bridge.BridgeContract
 import com.fwp.doubaonewline.bridge.VersionSessionIsolation
+import com.fwp.doubaonewline.bridge.VersionRouter
 import com.fwp.doubaonewline.v2.V2Activity
 import com.fwp.doubaonewline.v2.TtsEngineMode
 
@@ -113,8 +114,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
         tts = V3TtsPlayer(this)
         setupTtsEngineSelection()
 
-        getSharedPreferences(BridgeContract.PREFS, MODE_PRIVATE)
-            .edit().putString(BridgeContract.PREF_MODE, BridgeContract.MODE_V3).apply()
+        VersionRouter.saveSelectedMode(this, BridgeContract.MODE_V3)
 
         findViewById<Button>(R.id.v3SettingsButton).setOnClickListener {
             stopEngines(unloadModel = false)
@@ -129,12 +129,14 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
         findViewById<Button>(R.id.v3SwitchToV1Button).setOnClickListener {
             shutdownSession()
             VersionSessionIsolation.enterV1(this)
+            VersionRouter.saveSelectedMode(this, BridgeContract.MODE_V1)
             startActivity(Intent(this, MainActivity::class.java))
             finish()
         }
         findViewById<Button>(R.id.v3SwitchToV2Button).setOnClickListener {
             shutdownSession()
             VersionSessionIsolation.enterV2(this)
+            VersionRouter.saveSelectedMode(this, BridgeContract.MODE_V2)
             startActivity(Intent(this, V2Activity::class.java))
             finish()
         }

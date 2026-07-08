@@ -35,6 +35,7 @@ import com.fwp.doubaonewline.bridge.BridgeContract
 import com.fwp.doubaonewline.bridge.AudioRouteManager
 import com.fwp.doubaonewline.bridge.NewlineBridgeService
 import com.fwp.doubaonewline.bridge.VersionSessionIsolation
+import com.fwp.doubaonewline.bridge.VersionRouter
 import com.fwp.doubaonewline.v2.V2Activity
 import com.fwp.doubaonewline.v3.V3Activity
 
@@ -83,11 +84,13 @@ class MainActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.switchToV2Button).setOnClickListener {
             VersionSessionIsolation.enterV2(this)
+            VersionRouter.saveSelectedMode(this, BridgeContract.MODE_V2)
             startActivity(Intent(this, V2Activity::class.java))
             finish()
         }
         findViewById<Button>(R.id.switchToV3Button).setOnClickListener {
             VersionSessionIsolation.enterV3(this)
+            VersionRouter.saveSelectedMode(this, BridgeContract.MODE_V3)
             startActivity(Intent(this, V3Activity::class.java))
             finish()
         }
