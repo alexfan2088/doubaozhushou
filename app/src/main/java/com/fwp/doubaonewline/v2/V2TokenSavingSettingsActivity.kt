@@ -84,7 +84,7 @@ class V2TokenSavingSettingsActivity : AppCompatActivity() {
                 text,
                 speakerSpinner.selectedItemPosition.coerceIn(0, 4),
                 selectedGain().toFloat(),
-                store.load().ttsEngineMode
+                TtsEngineMode.SYSTEM
             ) {
                 previewButton.isEnabled = true
                 previewButton.text = "试听当前音色"
@@ -100,7 +100,7 @@ class V2TokenSavingSettingsActivity : AppCompatActivity() {
                 localWelcomeText = current.localWelcomeText,
                 offlineTtsSpeakerId = current.offlineTtsSpeakerId,
                 offlineTtsGain = current.offlineTtsGain,
-                ttsEngineMode = current.ttsEngineMode
+                ttsEngineMode = TtsEngineMode.SYSTEM
             )
             store.save(preset)
             bind(preset)
@@ -152,7 +152,7 @@ class V2TokenSavingSettingsActivity : AppCompatActivity() {
                     .ifBlank { V2TokenSavingConfig.DEFAULT_WELCOME_TEXT },
                 offlineTtsSpeakerId = speakerSpinner.selectedItemPosition.coerceIn(0, 4),
                 offlineTtsGain = selectedGain(),
-                ttsEngineMode = store.load().ttsEngineMode,
+                ttsEngineMode = TtsEngineMode.SYSTEM,
                 maxResponseSentences =
                     V2TokenSavingConfig.SENTENCE_OPTIONS[sentenceSpinner.selectedItemPosition],
                 idleTimeoutSeconds =
@@ -190,7 +190,7 @@ class V2TokenSavingSettingsActivity : AppCompatActivity() {
 
     private fun renderGainLabel(gain: Int) {
         gainLabel.text =
-            "离线 TTS 总增益：${gain} 倍（范围 " +
+            "系统 TTS 总增益：${gain} 倍（范围 " +
             "${V2TokenSavingConfig.MIN_TTS_GAIN}–${V2TokenSavingConfig.MAX_TTS_GAIN} 倍）"
     }
 

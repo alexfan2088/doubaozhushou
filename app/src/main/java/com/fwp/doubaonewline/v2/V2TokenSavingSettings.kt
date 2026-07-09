@@ -17,7 +17,7 @@ data class V2TokenSavingConfig(
     val localWelcomeText: String = DEFAULT_WELCOME_TEXT,
     val offlineTtsSpeakerId: Int = 0,
     val offlineTtsGain: Int = DEFAULT_TTS_GAIN,
-    val ttsEngineMode: TtsEngineMode = TtsEngineMode.LOCAL,
+    val ttsEngineMode: TtsEngineMode = TtsEngineMode.SYSTEM,
     val maxResponseSentences: Int = 2,
     val idleTimeoutSeconds: Int = 15,
     val wakeCooldownSeconds: Int = 3,
@@ -72,11 +72,7 @@ class V2TokenSavingSettings(context: Context) {
             KEY_OFFLINE_TTS_GAIN,
             V2TokenSavingConfig.DEFAULT_TTS_GAIN
         ).coerceIn(V2TokenSavingConfig.MIN_TTS_GAIN, V2TokenSavingConfig.MAX_TTS_GAIN),
-        ttsEngineMode = runCatching {
-            TtsEngineMode.valueOf(
-                prefs.getString(KEY_TTS_ENGINE_MODE, TtsEngineMode.LOCAL.name).orEmpty()
-            )
-        }.getOrDefault(TtsEngineMode.LOCAL),
+        ttsEngineMode = TtsEngineMode.SYSTEM,
         maxResponseSentences = allowed(
             prefs.getInt(KEY_MAX_RESPONSE_SENTENCES, 2),
             V2TokenSavingConfig.SENTENCE_OPTIONS,
@@ -127,7 +123,7 @@ class V2TokenSavingSettings(context: Context) {
                     V2TokenSavingConfig.MAX_TTS_GAIN
                 )
             )
-            .putString(KEY_TTS_ENGINE_MODE, config.ttsEngineMode.name)
+            .putString(KEY_TTS_ENGINE_MODE, TtsEngineMode.SYSTEM.name)
             .putInt(KEY_MAX_RESPONSE_SENTENCES, config.maxResponseSentences)
             .putInt(KEY_IDLE_TIMEOUT_SECONDS, config.idleTimeoutSeconds)
             .putInt(KEY_WAKE_COOLDOWN_SECONDS, config.wakeCooldownSeconds)

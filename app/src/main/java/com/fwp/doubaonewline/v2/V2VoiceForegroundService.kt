@@ -23,7 +23,7 @@ class V2VoiceForegroundService : Service() {
         manager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
-                "豆包大模型API",
+                "豆包API",
                 NotificationManager.IMPORTANCE_LOW
             )
         )
@@ -38,7 +38,7 @@ class V2VoiceForegroundService : Service() {
             NotificationCompat.Builder(this, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_usb)
                 .setContentTitle("豆包助手")
-                .setContentText("豆包大模型API正在运行")
+                .setContentText("豆包API正在运行")
                 .setContentIntent(contentIntent)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)

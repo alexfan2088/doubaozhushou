@@ -24,7 +24,7 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="DeepSeek大模型API"
+                android:text="DeepSeek API"
                 android:textColor="@color/text"
                 android:textSize="24sp"
                 android:textStyle="bold" />
@@ -129,30 +129,6 @@
             android:text="暂停语音会话"
             android:textAllCaps="false" />
 
-        <RadioGroup
-            android:id="@+id/v3TtsEngineGroup"
-            android:layout_width="match_parent"
-            android:layout_height="38dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <RadioButton
-                android:id="@+id/v3SystemTtsRadio"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:text="手机系统 TTS"
-                android:textSize="12sp" />
-
-            <RadioButton
-                android:id="@+id/v3LocalTtsRadio"
-                android:layout_width="0dp"
-                android:layout_height="match_parent"
-                android:layout_weight="1"
-                android:text="免费本地 TTS"
-                android:textSize="12sp" />
-        </RadioGroup>
-
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="44dp"
@@ -165,7 +141,7 @@
                 android:layout_height="match_parent"
                 android:layout_weight="1"
                 android:backgroundTint="@color/success"
-                android:text="豆包实时语音"
+                android:text="豆包APP"
                 android:textAllCaps="false"
                 android:textColor="#FFFFFF"
                 android:textSize="12sp"
@@ -178,7 +154,7 @@
                 android:layout_marginLeft="6dp"
                 android:layout_weight="1"
                 android:backgroundTint="@color/success"
-                android:text="豆包大模型API"
+                android:text="豆包API"
                 android:textAllCaps="false"
                 android:textColor="#FFFFFF"
                 android:textSize="12sp"

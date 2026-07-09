@@ -11,7 +11,7 @@ class V2TokenSavingConfigTest {
         val config = V2TokenSavingConfig()
 
         assertEquals(20, config.offlineTtsGain)
-        assertEquals(TtsEngineMode.LOCAL, config.ttsEngineMode)
+        assertEquals(TtsEngineMode.SYSTEM, config.ttsEngineMode)
         assertTrue(config.localWelcomeEnabled)
         assertEquals(0, config.offlineTtsSpeakerId)
         assertEquals(2, config.maxResponseSentences)

@@ -172,17 +172,17 @@ class NewlineBridgeService : Service(), TextToSpeech.OnInitListener {
             DoubaoAccessibilityService.cancelCallStart()
             publish(
                 "等待设备连接",
-                "连接 Type-C 或当前选择的蓝牙设备后，将自动启动豆包实时语音。"
+                "连接 Type-C 或当前选择的蓝牙设备后，将自动启动豆包APP。"
             )
             return
         }
 
         val connectionStatus = when (selection.kind) {
-            AudioRouteManager.Kind.USB -> "豆包实时语音已通过数据线连接"
+            AudioRouteManager.Kind.USB -> "豆包APP已通过数据线连接"
             AudioRouteManager.Kind.BLUETOOTH -> {
                 val name = audioRouteManager.selectedBluetoothName()
                     ?.substringBefore("（") ?: selection.label.substringBefore("（")
-                "豆包实时语音已蓝牙连接 $name"
+                "豆包APP已蓝牙连接 $name"
             }
             AudioRouteManager.Kind.NONE -> "等待连接"
         }

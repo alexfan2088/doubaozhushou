@@ -22,7 +22,7 @@
         android:layout_height="56dp"
         android:layout_marginTop="30dp"
         android:backgroundTint="@color/primary"
-        android:text="豆包大模型API"
+        android:text="豆包API"
         android:textAllCaps="false"
         android:textColor="#FFFFFF"
         android:textSize="16sp"
@@ -33,7 +33,7 @@
         android:layout_width="match_parent"
         android:layout_height="56dp"
         android:layout_marginTop="12dp"
-        android:text="豆包实时语音"
+        android:text="豆包APP"
         android:textAllCaps="false"
         android:textSize="16sp"
         android:textStyle="bold" />
@@ -43,7 +43,7 @@
         android:layout_width="match_parent"
         android:layout_height="56dp"
         android:layout_marginTop="12dp"
-        android:text="DeepSeek大模型API"
+        android:text="DeepSeek API"
         android:textAllCaps="false"
         android:textSize="16sp"
         android:textStyle="bold" />

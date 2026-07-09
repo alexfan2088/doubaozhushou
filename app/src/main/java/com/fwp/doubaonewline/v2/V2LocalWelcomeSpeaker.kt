@@ -8,23 +8,16 @@ import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
-import com.k2fsa.sherpa.onnx.OfflineTts
-import com.k2fsa.sherpa.onnx.OfflineTtsConfig
-import com.k2fsa.sherpa.onnx.OfflineTtsModelConfig
-import com.k2fsa.sherpa.onnx.OfflineTtsVitsModelConfig
 import java.io.File
-import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.UUID
-import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 
 class V2LocalWelcomeSpeaker(context: Context) {
     private val application = context.applicationContext
     private val handler = Handler(Looper.getMainLooper())
     private val cacheDirectory = File(application.cacheDir, CACHE_DIRECTORY).apply { mkdirs() }
-    private val sherpaExecutor = Executors.newSingleThreadExecutor()
     private var tts: TextToSpeech? = null
     private var player: MediaPlayer? = null
     private var ready = false
@@ -82,9 +75,9 @@ class V2LocalWelcomeSpeaker(context: Context) {
 
     fun speak(
         text: String,
-        speakerId: Int,
+        @Suppress("UNUSED_PARAMETER") speakerId: Int,
         gain: Float,
-        engineMode: TtsEngineMode = TtsEngineMode.LOCAL,
+        @Suppress("UNUSED_PARAMETER") engineMode: TtsEngineMode = TtsEngineMode.SYSTEM,
         onComplete: (Boolean) -> Unit
     ) {
         stop()
@@ -94,34 +87,17 @@ class V2LocalWelcomeSpeaker(context: Context) {
             return
         }
         completion = onComplete
-        val currentGeneration = ++generation
+        generation++
         val safeGain = gain.coerceIn(
             V2TokenSavingConfig.MIN_TTS_GAIN.toFloat(),
             V2TokenSavingConfig.MAX_TTS_GAIN.toFloat()
         )
-        val target = cachedWelcomeFile(
-            normalizedText,
-            if (engineMode == TtsEngineMode.SYSTEM) {
-                "system-gain-$safeGain"
-            } else {
-                "sherpa-${speakerId.coerceIn(0, 4)}-gain-$safeGain"
-            }
-        )
+        val target = cachedWelcomeFile(normalizedText, "system-gain-$safeGain")
         if (target.isFile && target.length() > WAV_HEADER_SIZE) {
             playFile(target)
             return
         }
-        if (engineMode == TtsEngineMode.SYSTEM) {
-            synthesizeWithSystem(normalizedText, target, safeGain)
-        } else {
-            synthesizeWithSherpa(
-                normalizedText,
-                speakerId.coerceIn(0, 4),
-                safeGain,
-                target,
-                currentGeneration
-            )
-        }
+        synthesizeWithSystem(normalizedText, target, safeGain)
     }
 
     private fun synthesizeWithSystem(text: String, target: File, gain: Float) {
@@ -145,122 +121,6 @@ class V2LocalWelcomeSpeaker(context: Context) {
         }
     }
 
-    private fun synthesizeWithSherpa(
-        text: String,
-        speakerId: Int,
-        gain: Float,
-        target: File,
-        currentGeneration: Long
-    ) {
-        handler.postDelayed({ finish(false) }, MAX_SHERPA_SYNTHESIS_DURATION_MS)
-        sherpaExecutor.execute {
-            val source = File.createTempFile("welcome-sherpa-", ".wav", cacheDirectory)
-            val success = runCatching {
-                val modelDirectory = ensureBundledModelFiles()
-                val vits = OfflineTtsVitsModelConfig(
-                    model = File(modelDirectory, "model.onnx").absolutePath,
-                    lexicon = File(modelDirectory, "lexicon.txt").absolutePath,
-                    tokens = File(modelDirectory, "tokens.txt").absolutePath,
-                    dictDir = File(modelDirectory, "dict").absolutePath,
-                    lengthScale = 1.0f
-                )
-                val model = OfflineTtsModelConfig(
-                    vits = vits,
-                    numThreads = 2,
-                    debug = false,
-                    provider = "cpu"
-                )
-                val config = OfflineTtsConfig(
-                    model = model,
-                    ruleFsts = listOf("date.fst", "number.fst", "phone.fst")
-                        .joinToString(",") { File(modelDirectory, it).absolutePath },
-                    maxNumSentences = 1
-                )
-                val offlineTts = OfflineTts(config = config)
-                try {
-                    val audio = offlineTts.generate(text, speakerId, 1.0f)
-                    check(audio.samples.isNotEmpty())
-                    check(audio.save(source.absolutePath))
-                } finally {
-                    offlineTts.release()
-                }
-                check(amplifyPcmWav(source, target, gain))
-            }.isSuccess
-            source.delete()
-            handler.post {
-                if (generation != currentGeneration || completion == null) {
-                    return@post
-                }
-                if (success && target.isFile) {
-                    playFile(target)
-                } else {
-                    val systemTarget = cachedWelcomeFile(text, "system-gain-$gain")
-                    if (systemTarget.isFile) {
-                        playFile(systemTarget)
-                    } else {
-                        synthesizeWithSystem(text, systemTarget, gain)
-                    }
-                }
-            }
-        }
-    }
-
-    private fun ensureBundledModelFiles(): File {
-        val destination = File(application.filesDir, MODEL_INSTALL_ROOT)
-        val installedModel = File(destination, "model.onnx")
-        if (
-            installedModel.length() == MODEL_SIZE_BYTES &&
-            File(destination, "lexicon.txt").isFile &&
-            File(destination, "tokens.txt").isFile &&
-            File(destination, "dict").isDirectory
-        ) {
-            return destination
-        }
-
-        val temporary = File(application.filesDir, "$MODEL_INSTALL_ROOT.tmp")
-        temporary.deleteRecursively()
-        temporary.mkdirs()
-        listOf("lexicon.txt", "tokens.txt", "date.fst", "number.fst", "phone.fst")
-            .forEach { copyAsset("$MODEL_ASSET_ROOT/$it", File(temporary, it)) }
-        copyAssetDirectory("$MODEL_ASSET_ROOT/dict", File(temporary, "dict"))
-        FileOutputStream(File(temporary, "model.onnx")).use { output ->
-            MODEL_PARTS.forEach { part ->
-                application.assets.open("$MODEL_ASSET_ROOT/$part").use { input ->
-                    input.copyTo(output, MODEL_COPY_BUFFER_SIZE)
-                }
-            }
-        }
-        check(File(temporary, "model.onnx").length() == MODEL_SIZE_BYTES) {
-            "内置离线语音模型不完整"
-        }
-        destination.deleteRecursively()
-        check(temporary.renameTo(destination)) { "无法安装内置离线语音模型" }
-        return destination
-    }
-
-    private fun copyAsset(assetPath: String, destination: File) {
-        destination.parentFile?.mkdirs()
-        application.assets.open(assetPath).use { input ->
-            FileOutputStream(destination).use { output ->
-                input.copyTo(output, MODEL_COPY_BUFFER_SIZE)
-            }
-        }
-    }
-
-    private fun copyAssetDirectory(assetPath: String, destination: File) {
-        destination.mkdirs()
-        val children = application.assets.list(assetPath).orEmpty()
-        children.forEach { child ->
-            val childAsset = "$assetPath/$child"
-            val childDestination = File(destination, child)
-            if (application.assets.list(childAsset).orEmpty().isNotEmpty()) {
-                copyAssetDirectory(childAsset, childDestination)
-            } else {
-                copyAsset(childAsset, childDestination)
-            }
-        }
-    }
-
     fun stop() {
         generation++
         handler.removeCallbacksAndMessages(null)
@@ -275,7 +135,6 @@ class V2LocalWelcomeSpeaker(context: Context) {
 
     fun shutdown() {
         stop()
-        sherpaExecutor.shutdownNow()
         runCatching { tts?.shutdown() }
         tts = null
         ready = false
@@ -416,20 +275,10 @@ class V2LocalWelcomeSpeaker(context: Context) {
 
     companion object {
         private const val CACHE_DIRECTORY = "v2-local-welcome"
-        private const val MODEL_ASSET_ROOT = "sherpa-tts-zh-ll"
-        private const val MODEL_INSTALL_ROOT = "sherpa-tts-zh-ll-bundled-v1"
-        private const val MODEL_SIZE_BYTES = 121_100_803L
-        private val MODEL_PARTS = listOf(
-            "model.onnx.part-00",
-            "model.onnx.part-01",
-            "model.onnx.part-02"
-        )
-        private const val MODEL_COPY_BUFFER_SIZE = 128 * 1024
         private const val CACHE_VERSION = 5
         private const val WAV_HEADER_SIZE = 44
         private const val WAVE_FORMAT_PCM = 1
         private const val MAX_SYNTHESIS_DURATION_MS = 8_000L
-        private const val MAX_SHERPA_SYNTHESIS_DURATION_MS = 30_000L
         private const val MAX_PLAYBACK_DURATION_MS = 6_000L
     }
 }

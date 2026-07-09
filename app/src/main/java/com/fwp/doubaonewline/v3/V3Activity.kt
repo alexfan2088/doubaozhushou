@@ -17,7 +17,6 @@ import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
 import android.widget.Button
-import android.widget.RadioGroup
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -30,7 +29,6 @@ import com.fwp.doubaonewline.bridge.BridgeContract
 import com.fwp.doubaonewline.bridge.VersionSessionIsolation
 import com.fwp.doubaonewline.bridge.VersionRouter
 import com.fwp.doubaonewline.v2.V2Activity
-import com.fwp.doubaonewline.v2.TtsEngineMode
 
 class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.Listener {
     private lateinit var statusText: TextView
@@ -66,7 +64,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
                 callPaused = true
                 stopEngines(unloadModel = false)
                 statusText.text = "通话中"
-                detailText.text = "电话结束后将自动恢复DeepSeek大模型API。"
+                detailText.text = "电话结束后将自动恢复DeepSeek API。"
             } else if (!inCall && callPaused) {
                 callPaused = false
                 startIfReady()
@@ -78,7 +76,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
     private val microphonePermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) startIfReady() else showError("DeepSeek大模型API需要麦克风权限")
+        if (granted) startIfReady() else showError("DeepSeek API需要麦克风权限")
     }
 
     private val bluetoothPermission = registerForActivityResult(
@@ -112,7 +110,6 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
         audioMonitor = AudioDeviceMonitor(this) { inspectAudioRoute() }
         deepSeek = V3DeepSeekEngine(this)
         tts = V3TtsPlayer(this)
-        setupTtsEngineSelection()
 
         VersionRouter.saveSelectedMode(this, BridgeContract.MODE_V3)
 
@@ -192,7 +189,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
         }
         if (activeRouteKey == null) {
             statusText.text = "等待设备连接"
-            detailText.text = "连接 Type-C 或当前选择的蓝牙设备后自动启动DeepSeek大模型API。"
+            detailText.text = "连接 Type-C 或当前选择的蓝牙设备后自动启动DeepSeek API。"
             pauseButton.isEnabled = false
             renderModelSummary()
             return
@@ -316,7 +313,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
     private fun pauseSession() {
         paused = true
         stopEngines(unloadModel = false)
-        statusText.text = "DeepSeek大模型API语音会话已暂停"
+        statusText.text = "DeepSeek API语音会话已暂停"
         detailText.text = "点击“恢复语音会话”后继续。"
         pauseButton.text = "恢复语音会话"
         pauseButton.isEnabled = true
@@ -365,7 +362,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
         }
         routeText.text = when (selection.kind) {
             AudioRouteManager.Kind.USB -> if (selection.routeAccepted) {
-                "DeepSeek大模型API已通过数据线连接，使用 Type-C 设备拾音。"
+                "DeepSeek API已通过数据线连接，使用 Type-C 设备拾音。"
             } else {
                 "Type-C 外设无可用拾音，使用手机麦克风。"
             }
@@ -373,9 +370,9 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
                 val name = audioRouteManager.selectedBluetoothName()
                     ?.substringBefore("（") ?: selection.label.substringBefore("（")
                 if (selection.routeAccepted) {
-                    "DeepSeek大模型API已蓝牙连接 $name，使用 HFP 麦克风。"
+                    "DeepSeek API已蓝牙连接 $name，使用 HFP 麦克风。"
                 } else {
-                    "DeepSeek大模型API已蓝牙连接 $name，无 HFP 拾音，使用手机麦克风。"
+                    "DeepSeek API已蓝牙连接 $name，无 HFP 拾音，使用手机麦克风。"
                 }
             }
             AudioRouteManager.Kind.NONE ->
@@ -388,7 +385,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
                 if (!modelLoading) {
                     statusText.text = "等待设备连接"
                     detailText.text =
-                        "连接 Type-C 或当前选择的蓝牙设备后自动启动DeepSeek大模型API。"
+                        "连接 Type-C 或当前选择的蓝牙设备后自动启动DeepSeek API。"
                 }
             } else {
                 startIfReady()
@@ -431,7 +428,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
             if (it.key == selectedKey) selectedLabel(it.displayLabel) else it.displayLabel
         }.toTypedArray()
         AlertDialog.Builder(this)
-            .setTitle("选择DeepSeek大模型API蓝牙设备")
+            .setTitle("选择DeepSeek API蓝牙设备")
             .setItems(labels) { _, index ->
                 audioRouteManager.saveBluetoothCandidate(ordered[index])
                 stopEngines(unloadModel = false)
@@ -471,27 +468,6 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
         }
     }
 
-    private fun setupTtsEngineSelection() {
-        val group = findViewById<RadioGroup>(R.id.v3TtsEngineGroup)
-        group.check(
-            if (config.ttsEngineMode == TtsEngineMode.SYSTEM) {
-                R.id.v3SystemTtsRadio
-            } else {
-                R.id.v3LocalTtsRadio
-            }
-        )
-        group.setOnCheckedChangeListener { _, checkedId ->
-            config = config.copy(
-                ttsEngineMode = if (checkedId == R.id.v3SystemTtsRadio) {
-                    TtsEngineMode.SYSTEM
-                } else {
-                    TtsEngineMode.LOCAL
-                }
-            )
-            settings.save(config)
-        }
-    }
-
     private fun renderModelSummary() {
         val recommendation = settings.recommendation()
         val installed = modelManager.isInstalled(config.selectedModel)
@@ -517,7 +493,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
     }
 
     private fun showError(message: String) {
-        statusText.text = "DeepSeek大模型API会话失败"
+        statusText.text = "DeepSeek API会话失败"
         detailText.text = message
     }
 

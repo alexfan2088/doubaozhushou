@@ -36,7 +36,7 @@
             android:layout_height="48dp"
             android:layout_marginTop="14dp"
             android:buttonTint="@color/primary"
-            android:text="使用内置离线 TTS 播放欢迎词"
+            android:text="使用手机系统 TTS 播放欢迎词"
             android:textColor="@color/text"
             android:textSize="14sp" />
 
@@ -55,16 +55,17 @@
 
         <TextView
             style="@style/TokenSettingLabel"
-            android:text="离线欢迎词音色（模型已内置）" />
+            android:text="系统 TTS 欢迎词音量" />
 
         <Spinner
             android:id="@+id/offlineTtsSpeakerSpinner"
+            android:visibility="gone"
             style="@style/TokenSettingSpinner" />
 
         <TextView
             android:id="@+id/offlineTtsGainLabel"
             style="@style/TokenSettingLabel"
-            android:text="离线 TTS 总增益：20 倍（范围 1–30 倍）" />
+            android:text="系统 TTS 总增益：20 倍（范围 1–30 倍）" />
 
         <SeekBar
             android:id="@+id/offlineTtsGainSeek"
@@ -81,7 +82,7 @@
             android:layout_height="44dp"
             android:layout_marginTop="4dp"
             android:backgroundTint="@color/primary"
-            android:text="试听当前音色"
+            android:text="试听欢迎词"
             android:textAllCaps="false"
             android:textColor="#FFFFFF"
             android:textStyle="bold" />

@@ -33,7 +33,7 @@ data class V3Config(
     val allowBargeIn: Boolean = true,
     val speakerId: Int = 0,
     val ttsGain: Int = 20,
-    val ttsEngineMode: TtsEngineMode = TtsEngineMode.LOCAL,
+    val ttsEngineMode: TtsEngineMode = TtsEngineMode.SYSTEM,
     val maxResponseSentences: Int = 2,
     val contextRounds: Int = 4
 )
@@ -74,11 +74,7 @@ class V3Settings(private val context: Context) {
         allowBargeIn = prefs.getBoolean(KEY_BARGE_IN, true),
         speakerId = prefs.getInt(KEY_SPEAKER, 0).coerceIn(0, 4),
         ttsGain = prefs.getInt(KEY_GAIN, 20).coerceIn(1, 30),
-        ttsEngineMode = runCatching {
-            TtsEngineMode.valueOf(
-                prefs.getString(KEY_TTS_ENGINE, TtsEngineMode.LOCAL.name).orEmpty()
-            )
-        }.getOrDefault(TtsEngineMode.LOCAL),
+        ttsEngineMode = TtsEngineMode.SYSTEM,
         maxResponseSentences = prefs.getInt(KEY_SENTENCES, 2).coerceIn(1, 3),
         contextRounds = prefs.getInt(KEY_CONTEXT_ROUNDS, 4).coerceIn(1, 8)
     )
@@ -89,7 +85,7 @@ class V3Settings(private val context: Context) {
             .putBoolean(KEY_BARGE_IN, config.allowBargeIn)
             .putInt(KEY_SPEAKER, config.speakerId.coerceIn(0, 4))
             .putInt(KEY_GAIN, config.ttsGain.coerceIn(1, 30))
-            .putString(KEY_TTS_ENGINE, config.ttsEngineMode.name)
+            .putString(KEY_TTS_ENGINE, TtsEngineMode.SYSTEM.name)
             .putInt(KEY_SENTENCES, config.maxResponseSentences.coerceIn(1, 3))
             .putInt(KEY_CONTEXT_ROUNDS, config.contextRounds.coerceIn(1, 8))
             .apply()

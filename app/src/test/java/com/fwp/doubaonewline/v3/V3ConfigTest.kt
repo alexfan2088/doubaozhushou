@@ -11,7 +11,7 @@ class V3ConfigTest {
         val config = V3Config()
         assertEquals(V3Model.DEEPSEEK_1_5B, config.selectedModel)
         assertTrue(config.allowBargeIn)
-        assertEquals(TtsEngineMode.LOCAL, config.ttsEngineMode)
+        assertEquals(TtsEngineMode.SYSTEM, config.ttsEngineMode)
         assertEquals(20, config.ttsGain)
     }
 

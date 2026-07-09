@@ -11,7 +11,7 @@ class V3TtsPlayer(context: Context) {
     private var generation = 0L
     private var speakerId = 0
     private var gain = 20f
-    private var engineMode = TtsEngineMode.LOCAL
+    private var engineMode = TtsEngineMode.SYSTEM
     private var completion: (() -> Unit)? = null
 
     fun speak(
