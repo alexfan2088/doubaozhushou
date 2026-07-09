@@ -66,7 +66,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
                 callPaused = true
                 stopEngines(unloadModel = false)
                 statusText.text = "通话中"
-                detailText.text = "电话结束后将自动恢复 V3 本地语音。"
+                detailText.text = "电话结束后将自动恢复DeepSeek大模型API。"
             } else if (!inCall && callPaused) {
                 callPaused = false
                 startIfReady()
@@ -78,7 +78,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
     private val microphonePermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) startIfReady() else showError("V3 需要麦克风权限")
+        if (granted) startIfReady() else showError("DeepSeek大模型API需要麦克风权限")
     }
 
     private val bluetoothPermission = registerForActivityResult(
@@ -192,7 +192,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
         }
         if (activeRouteKey == null) {
             statusText.text = "等待设备连接"
-            detailText.text = "连接 Type-C 或当前选择的蓝牙设备后自动启动 V3 会话。"
+            detailText.text = "连接 Type-C 或当前选择的蓝牙设备后自动启动DeepSeek大模型API。"
             pauseButton.isEnabled = false
             renderModelSummary()
             return
@@ -316,7 +316,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
     private fun pauseSession() {
         paused = true
         stopEngines(unloadModel = false)
-        statusText.text = "V3 语音会话已暂停"
+        statusText.text = "DeepSeek大模型API语音会话已暂停"
         detailText.text = "点击“恢复语音会话”后继续。"
         pauseButton.text = "恢复语音会话"
         pauseButton.isEnabled = true
@@ -365,14 +365,18 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
         }
         routeText.text = when (selection.kind) {
             AudioRouteManager.Kind.USB -> if (selection.routeAccepted) {
-                "V3 已通过数据线连接，使用 Type-C 设备拾音。"
+                "DeepSeek大模型API已通过数据线连接，使用 Type-C 设备拾音。"
             } else {
                 "Type-C 外设无可用拾音，使用手机麦克风。"
             }
-            AudioRouteManager.Kind.BLUETOOTH -> if (selection.routeAccepted) {
-                "V3 已蓝牙连接 ${selection.label.substringBefore("（")}，使用 HFP 麦克风。"
-            } else {
-                "所选蓝牙设备无 HFP 拾音，使用手机麦克风。"
+            AudioRouteManager.Kind.BLUETOOTH -> {
+                val name = audioRouteManager.selectedBluetoothName()
+                    ?.substringBefore("（") ?: selection.label.substringBefore("（")
+                if (selection.routeAccepted) {
+                    "DeepSeek大模型API已蓝牙连接 $name，使用 HFP 麦克风。"
+                } else {
+                    "DeepSeek大模型API已蓝牙连接 $name，无 HFP 拾音，使用手机麦克风。"
+                }
             }
             AudioRouteManager.Kind.NONE ->
                 "当前选择的蓝牙设备未连接，且未检测到 Type-C 音频设备。"
@@ -384,7 +388,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
                 if (!modelLoading) {
                     statusText.text = "等待设备连接"
                     detailText.text =
-                        "连接 Type-C 或当前选择的蓝牙设备后自动启动 V3 会话。"
+                        "连接 Type-C 或当前选择的蓝牙设备后自动启动DeepSeek大模型API。"
                 }
             } else {
                 startIfReady()
@@ -427,7 +431,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
             if (it.key == selectedKey) selectedLabel(it.displayLabel) else it.displayLabel
         }.toTypedArray()
         AlertDialog.Builder(this)
-            .setTitle("选择 V3 蓝牙设备")
+            .setTitle("选择DeepSeek大模型API蓝牙设备")
             .setItems(labels) { _, index ->
                 audioRouteManager.saveBluetoothCandidate(ordered[index])
                 stopEngines(unloadModel = false)
@@ -513,7 +517,7 @@ class V3Activity : AppCompatActivity(), V3AsrEngine.Listener, V3DeepSeekEngine.L
     }
 
     private fun showError(message: String) {
-        statusText.text = "V3 本地会话失败"
+        statusText.text = "DeepSeek大模型API会话失败"
         detailText.text = message
     }
 

@@ -17,7 +17,7 @@ class V3VoiceForegroundService : Service() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,
-                "V3 本地语音",
+                "DeepSeek大模型API",
                 NotificationManager.IMPORTANCE_LOW
             )
         )
@@ -31,7 +31,7 @@ class V3VoiceForegroundService : Service() {
             NOTIFICATION_ID,
             NotificationCompat.Builder(this, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_usb)
-                .setContentTitle("豆包助手 V3")
+                .setContentTitle("DeepSeek大模型API")
                 .setContentText("DeepSeek 本地语音正在运行")
                 .setContentIntent(contentIntent)
                 .setOngoing(true)

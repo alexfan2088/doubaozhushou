@@ -125,7 +125,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         ) {
             if (isPhoneCallActive()) {
                 statusText.text = "通话中"
-                detailText.text = "电话结束后将自动恢复 V2 语音会话。"
+                detailText.text = "电话结束后将自动恢复豆包大模型API语音会话。"
                 handler.postDelayed(reconnectSession, RECONNECT_DELAY_MS)
             } else {
                 if (coordinator.state != RealtimeVoiceState.IDLE) {
@@ -205,7 +205,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
             startSession()
         } else {
             startAfterPermission = false
-            showError("无法开始", "V2 实时语音需要麦克风权限。")
+            showError("无法开始", "豆包大模型API需要麦克风权限。")
         }
     }
 
@@ -474,12 +474,12 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
 
     private fun scheduleReconnect(reason: String) {
         if (userRequestedStop || manuallyPaused || activeRouteKey == null) {
-            showError("V2 连接失败", reason)
+            showError("豆包大模型API连接失败", reason)
             return
         }
-        statusText.text = if (isPhoneCallActive()) "通话中" else "V2 连接失败，正在重试"
+        statusText.text = if (isPhoneCallActive()) "通话中" else "豆包大模型API连接失败，正在重试"
         detailText.text = if (isPhoneCallActive()) {
-            "电话结束后将自动恢复 V2 语音会话。"
+            "电话结束后将自动恢复豆包大模型API语音会话。"
         } else {
             "$reason\n将在 ${RECONNECT_DELAY_MS / 1_000} 秒后自动重试。"
         }
@@ -733,17 +733,17 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         activeConnectionDetail = when (selection.kind) {
             AudioRouteManager.Kind.USB ->
                 if (selection.routeAccepted) {
-                    "V2 已通过数据线连接，使用 Type-C 设备拾音。"
+                    "豆包大模型API已通过数据线连接，使用 Type-C 设备拾音。"
                 } else {
-                    "V2 已通过数据线连接，外设无可用拾音，使用手机麦克风。"
+                    "豆包大模型API已通过数据线连接，外设无可用拾音，使用手机麦克风。"
                 }
             AudioRouteManager.Kind.BLUETOOTH -> {
                 val name = audioRouteManager.selectedBluetoothName()
                     ?.substringBefore("（") ?: selection.label.substringBefore("（")
                 if (selection.routeAccepted) {
-                    "V2 已蓝牙连接 $name，使用蓝牙 HFP 麦克风。"
+                    "豆包大模型API已蓝牙连接 $name，使用蓝牙 HFP 麦克风。"
                 } else {
-                    "V2 已蓝牙连接 $name，无 HFP 拾音，使用手机麦克风。"
+                    "豆包大模型API已蓝牙连接 $name，无 HFP 拾音，使用手机麦克风。"
                 }
             }
             AudioRouteManager.Kind.NONE -> ""
@@ -886,7 +886,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
                     } else {
                         finishSessionDuration()
                         V2VoiceForegroundService.stop(this)
-                        showError("V2 服务错误", "${event.code}: ${event.message}")
+                        showError("豆包大模型API服务错误", "${event.code}: ${event.message}")
                     }
                 }
                 is RealtimeVoiceEvent.ModelAudio -> Unit
@@ -936,7 +936,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     }
 
     private fun setConnectingUi() {
-        statusText.text = "正在连接 V2"
+        statusText.text = "正在连接豆包大模型API"
         detailText.text = "正在初始化端到端实时语音 SDK…"
         stopButton.text = "暂停语音会话"
         stopButton.isEnabled = true
@@ -964,7 +964,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
 
     private fun showWaitingForDevice() {
         statusText.text = "等待设备连接"
-        detailText.text = "连接 Type-C 或已选择的蓝牙通话设备后，将自动开始 V2 实时语音。"
+        detailText.text = "连接 Type-C 或已选择的蓝牙通话设备后，将自动开始豆包大模型API。"
         stopButton.text = if (manuallyPaused) "恢复语音会话" else "暂停语音会话"
         stopButton.isEnabled = false
     }
