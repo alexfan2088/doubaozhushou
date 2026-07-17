@@ -117,6 +117,15 @@
             android:textSize="13sp" />
 
         <TextView
+            android:id="@+id/v2LastWakeText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="0dp"
+            android:text="最近唤醒：暂无"
+            android:textColor="@color/muted"
+            android:textSize="12sp" />
+
+        <TextView
             android:id="@+id/v2WakeSensitivityText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

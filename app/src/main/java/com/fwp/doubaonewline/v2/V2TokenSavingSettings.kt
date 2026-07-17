@@ -15,6 +15,7 @@ enum class TtsEngineMode {
 data class V2TokenSavingConfig(
     val localWelcomeEnabled: Boolean = true,
     val localWelcomeText: String = DEFAULT_WELCOME_TEXT,
+    val wakeWordText: String = DEFAULT_WAKE_WORD,
     val offlineTtsSpeakerId: Int = 0,
     val offlineTtsGain: Int = DEFAULT_TTS_GAIN,
     val ttsEngineMode: TtsEngineMode = TtsEngineMode.SYSTEM,
@@ -36,6 +37,7 @@ data class V2TokenSavingConfig(
 
     companion object {
         const val DEFAULT_WELCOME_TEXT = "豆包已经准备好了"
+        const val DEFAULT_WAKE_WORD = "豆包豆包"
         const val MIN_TTS_GAIN = 1
         const val DEFAULT_TTS_GAIN = 20
         const val MAX_TTS_GAIN = 30
@@ -48,6 +50,7 @@ data class V2TokenSavingConfig(
 
         fun unoptimized() = V2TokenSavingConfig(
             localWelcomeEnabled = false,
+            wakeWordText = DEFAULT_WAKE_WORD,
             maxResponseSentences = UNLIMITED,
             idleTimeoutSeconds = 60,
             wakeCooldownSeconds = 1,
@@ -67,6 +70,10 @@ class V2TokenSavingSettings(context: Context) {
             KEY_LOCAL_WELCOME_TEXT,
             V2TokenSavingConfig.DEFAULT_WELCOME_TEXT
         ).orEmpty().ifBlank { V2TokenSavingConfig.DEFAULT_WELCOME_TEXT },
+        wakeWordText = prefs.getString(
+            KEY_WAKE_WORD_TEXT,
+            V2TokenSavingConfig.DEFAULT_WAKE_WORD
+        ).orEmpty().ifBlank { V2TokenSavingConfig.DEFAULT_WAKE_WORD },
         offlineTtsSpeakerId = prefs.getInt(KEY_OFFLINE_TTS_SPEAKER_ID, 0).coerceIn(0, 4),
         offlineTtsGain = prefs.getInt(
             KEY_OFFLINE_TTS_GAIN,
@@ -115,6 +122,10 @@ class V2TokenSavingSettings(context: Context) {
                 KEY_LOCAL_WELCOME_TEXT,
                 config.localWelcomeText.ifBlank { V2TokenSavingConfig.DEFAULT_WELCOME_TEXT }
             )
+            .putString(
+                KEY_WAKE_WORD_TEXT,
+                config.wakeWordText.ifBlank { V2TokenSavingConfig.DEFAULT_WAKE_WORD }
+            )
             .putInt(KEY_OFFLINE_TTS_SPEAKER_ID, config.offlineTtsSpeakerId.coerceIn(0, 4))
             .putInt(
                 KEY_OFFLINE_TTS_GAIN,
@@ -140,6 +151,7 @@ class V2TokenSavingSettings(context: Context) {
         private const val PREFS = "v2_token_saving_settings"
         private const val KEY_LOCAL_WELCOME_ENABLED = "local_welcome_enabled"
         private const val KEY_LOCAL_WELCOME_TEXT = "local_welcome_text"
+        private const val KEY_WAKE_WORD_TEXT = "wake_word_text"
         private const val KEY_OFFLINE_TTS_SPEAKER_ID = "offline_tts_speaker_id"
         private const val KEY_OFFLINE_TTS_GAIN = "offline_tts_gain"
         private const val KEY_TTS_ENGINE_MODE = "tts_engine_mode"

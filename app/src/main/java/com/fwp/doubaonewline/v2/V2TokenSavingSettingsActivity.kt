@@ -16,6 +16,7 @@ class V2TokenSavingSettingsActivity : AppCompatActivity() {
     private lateinit var store: V2TokenSavingSettings
     private lateinit var localWelcomeCheck: CheckBox
     private lateinit var welcomeText: EditText
+    private lateinit var wakeWordText: EditText
     private lateinit var speakerSpinner: Spinner
     private lateinit var gainLabel: TextView
     private lateinit var gainSeek: SeekBar
@@ -35,6 +36,7 @@ class V2TokenSavingSettingsActivity : AppCompatActivity() {
         welcomeSpeaker = V2LocalWelcomeSpeaker(this)
         localWelcomeCheck = findViewById(R.id.localWelcomeCheck)
         welcomeText = findViewById(R.id.localWelcomeText)
+        wakeWordText = findViewById(R.id.wakeWordText)
         speakerSpinner = findViewById(R.id.offlineTtsSpeakerSpinner)
         gainLabel = findViewById(R.id.offlineTtsGainLabel)
         gainSeek = findViewById(R.id.offlineTtsGainSeek)
@@ -98,6 +100,7 @@ class V2TokenSavingSettingsActivity : AppCompatActivity() {
             val current = store.load()
             val preset = V2TokenSavingConfig.unoptimized().copy(
                 localWelcomeText = current.localWelcomeText,
+                wakeWordText = current.wakeWordText,
                 offlineTtsSpeakerId = current.offlineTtsSpeakerId,
                 offlineTtsGain = current.offlineTtsGain,
                 ttsEngineMode = TtsEngineMode.SYSTEM
@@ -118,6 +121,7 @@ class V2TokenSavingSettingsActivity : AppCompatActivity() {
     private fun bind(config: V2TokenSavingConfig) {
         localWelcomeCheck.isChecked = config.localWelcomeEnabled
         welcomeText.setText(config.localWelcomeText)
+        wakeWordText.setText(config.wakeWordText)
         welcomeText.isEnabled = config.localWelcomeEnabled
         speakerSpinner.setSelection(config.offlineTtsSpeakerId)
         gainSeek.progress = config.offlineTtsGain - V2TokenSavingConfig.MIN_TTS_GAIN
@@ -145,11 +149,17 @@ class V2TokenSavingSettingsActivity : AppCompatActivity() {
     }
 
     private fun save() {
+        val wakeWord = WakeWordKeywordBuilder.normalize(wakeWordText.text.toString())
+        if (!WakeWordKeywordBuilder.isSupportedWakeWord(wakeWord)) {
+            Toast.makeText(this, "唤醒词只支持 2-8 个中文汉字", Toast.LENGTH_SHORT).show()
+            return
+        }
         store.save(
             V2TokenSavingConfig(
                 localWelcomeEnabled = localWelcomeCheck.isChecked,
                 localWelcomeText = welcomeText.text.toString().trim()
                     .ifBlank { V2TokenSavingConfig.DEFAULT_WELCOME_TEXT },
+                wakeWordText = wakeWord,
                 offlineTtsSpeakerId = speakerSpinner.selectedItemPosition.coerceIn(0, 4),
                 offlineTtsGain = selectedGain(),
                 ttsEngineMode = TtsEngineMode.SYSTEM,

@@ -17,4 +17,11 @@ class WakeKeywordPolicyTest {
         assertTrue(WakeKeywordPolicy.accepts("豆包豆包A", 0.12f))
         assertTrue(WakeKeywordPolicy.accepts("豆包豆包E", 0.045f))
     }
+
+    @Test
+    fun customKeywordUsesConfiguredWakeWord() {
+        assertTrue(WakeKeywordPolicy.accepts("你好豆包", 0.20f, "你好豆包"))
+        assertFalse(WakeKeywordPolicy.accepts("豆包豆包", 0.20f, "你好豆包"))
+        assertTrue(WakeKeywordPolicy.accepts("你好豆包A", 0.12f, "你好豆包"))
+    }
 }

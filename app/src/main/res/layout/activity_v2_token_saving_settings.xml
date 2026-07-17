@@ -26,9 +26,27 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="回答长度、上下文和回答超时同时作用于直连及本地唤醒模式；待机关闭和重复唤醒仅作用于本地唤醒模式。保存后持久生效。"
+            android:text="回答长度、上下文、回答超时和唤醒词同时作用于直连及本地唤醒模式；待机关闭和重复唤醒仅作用于本地唤醒模式。保存后持久生效。"
             android:textColor="@color/muted"
             android:textSize="12sp" />
+
+        <TextView
+            style="@style/TokenSettingLabel"
+            android:text="本地唤醒词" />
+
+        <EditText
+            android:id="@+id/wakeWordText"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:background="@drawable/settings_background"
+            android:hint="例如：豆包豆包"
+            android:inputType="text"
+            android:maxLength="8"
+            android:maxLines="1"
+            android:paddingLeft="12dp"
+            android:paddingRight="12dp"
+            android:textColor="@color/text"
+            android:textSize="14sp" />
 
         <CheckBox
             android:id="@+id/localWelcomeCheck"

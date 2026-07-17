@@ -46,6 +46,9 @@ import com.fwp.doubaonewline.bridge.VersionSessionIsolation
 import com.fwp.doubaonewline.bridge.VersionRouter
 import com.fwp.doubaonewline.v3.V3Activity
 import java.text.NumberFormat
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 
 class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
@@ -55,6 +58,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     private lateinit var usageTable: LinearLayout
     private lateinit var selectedBluetoothText: TextView
     private lateinit var localWakeCheck: CheckBox
+    private lateinit var lastWakeText: TextView
     private lateinit var wakeSensitivityText: TextView
     private lateinit var wakeSensitivitySeek: SeekBar
 
@@ -185,7 +189,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
                     return@speak
                 }
                 localWelcomeInProgress = false
-                statusText.text = "请用豆包豆包唤醒"
+                statusText.text = "请用${tokenSavingConfig.wakeWordText}唤醒"
                 detailText.text =
                     "$activeConnectionDetail\n本地监听中，不消耗云端 Token。"
                 handler.postDelayed(
@@ -238,6 +242,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         usageTable = findViewById(R.id.v2UsageTable)
         selectedBluetoothText = findViewById(R.id.v2SelectedBluetoothText)
         localWakeCheck = findViewById(R.id.v2LocalWakeCheck)
+        lastWakeText = findViewById(R.id.v2LastWakeText)
         wakeSensitivityText = findViewById(R.id.v2WakeSensitivityText)
         wakeSensitivitySeek = findViewById(R.id.v2WakeSensitivitySeek)
 
@@ -253,7 +258,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         audioRouteManager = AudioRouteManager(this)
         wakeWordDetector = OfflineWakeWordDetector(
             this,
-            onDetected = {
+            onDetected = { detectedKeyword ->
                 runOnUiThread {
                     if (
                         localWakeCheck.isChecked &&
@@ -264,7 +269,9 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
                         wakeCooldownElapsed()
                     ) {
                         lastWakeAcceptedAtMs = SystemClock.elapsedRealtime()
-                        statusText.text = "已听到豆包豆包"
+                        val sensitivity = currentWakeSensitivity()
+                        renderLastWake(detectedKeyword, sensitivity)
+                        statusText.text = "已听到${tokenSavingConfig.wakeWordText}"
                         detailText.text = "正在准备云端语音模型…"
                         startSession(
                             resetSession = false,
@@ -286,6 +293,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         val voicePrefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         localWakeCheck.isChecked = voicePrefs
             .getBoolean(KEY_LOCAL_WAKE_ENABLED, false)
+        renderLocalWakeLabel()
         val initialSensitivity = voicePrefs
             .getInt(KEY_WAKE_SENSITIVITY, DEFAULT_WAKE_SENSITIVITY)
             .coerceIn(MIN_WAKE_SENSITIVITY, MAX_WAKE_SENSITIVITY)
@@ -381,7 +389,18 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         super.onResume()
         if (::tokenSavingSettings.isInitialized) {
             tokenSavingConfig = tokenSavingSettings.load()
+            renderLocalWakeLabel()
+            renderWakeSensitivity(currentWakeSensitivity())
             if (cloudSessionActive) scheduleLocalWakeStandby()
+            if (
+                localWakeCheck.isChecked &&
+                !cloudSessionActive &&
+                !manuallyPaused &&
+                activeRouteKey != null
+            ) {
+                wakeWordDetector.stop()
+                handler.postDelayed({ startLocalWakeListening() }, AUDIO_HANDOFF_DELAY_MS)
+            }
         }
     }
 
@@ -514,36 +533,63 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
             showError("本地唤醒不可用", "没有找到可用麦克风。")
             return
         }
-        if (!wakeWordDetector.start(input, currentWakeProfile())) {
+        val keywordSource = WakeWordKeywordBuilder.createKeywordSource(
+            this,
+            tokenSavingConfig.wakeWordText
+        )
+        if (keywordSource.usingFallback) {
+            tokenSavingConfig = tokenSavingConfig.copy(
+                wakeWordText = V2TokenSavingConfig.DEFAULT_WAKE_WORD
+            )
+            renderLocalWakeLabel()
+        }
+        if (!wakeWordDetector.start(input, currentWakeProfile(), keywordSource)) {
             showError("本地唤醒不可用", "缺少麦克风权限。")
         }
     }
 
     private fun currentWakeProfile(): WakeCalibrationProfile {
-        val sensitivity = wakeSensitivitySeek.progress.coerceIn(
-            MIN_WAKE_SENSITIVITY,
-            MAX_WAKE_SENSITIVITY
-        )
         return WakeCalibrationStore.DEFAULT_PROFILE.copy(
-            keywordThreshold = when (sensitivity) {
-                1 -> 0.28f
-                2 -> 0.20f
-                3 -> 0.12f
-                4 -> 0.08f
-                else -> 0.045f
-            }
+            keywordThreshold = thresholdForSensitivity(currentWakeSensitivity())
         )
     }
 
     private fun renderWakeSensitivity(sensitivity: Int) {
-        val description = when (sensitivity) {
-            1 -> "保守 · 最低误唤醒"
-            2 -> "较低 · 偏重准确性"
-            3 -> "均衡（推荐）"
-            4 -> "较高 · 更容易唤醒"
-            else -> "高灵敏 · 误唤醒较多"
-        }
-        wakeSensitivityText.text = "唤醒灵敏度：$sensitivity · $description"
+        wakeSensitivityText.text =
+            "唤醒灵敏度：$sensitivity · ${wakeThresholdStandard(sensitivity)}"
+    }
+
+    private fun renderLocalWakeLabel() {
+        localWakeCheck.text = "本地唤醒（${tokenSavingConfig.wakeWordText}）"
+    }
+
+    private fun renderLastWake(detectedKeyword: String, sensitivity: Int) {
+        val time = SimpleDateFormat("HH:mm:ss", Locale.CHINA).format(Date())
+        lastWakeText.text =
+            "最近唤醒：$time · 识别：$detectedKeyword · 阈值：$sensitivity（" +
+            "${wakeThresholdStandard(sensitivity)}）"
+    }
+
+    private fun currentWakeSensitivity(): Int =
+        wakeSensitivitySeek.progress.coerceIn(
+            MIN_WAKE_SENSITIVITY,
+            MAX_WAKE_SENSITIVITY
+        )
+
+    private fun thresholdForSensitivity(sensitivity: Int): Float = when (sensitivity) {
+        1 -> 0.28f
+        2 -> 0.20f
+        3 -> 0.12f
+        4 -> 0.08f
+        else -> 0.045f
+    }
+
+    private fun wakeThresholdStandard(sensitivity: Int): String = when (sensitivity) {
+        1 -> "0.28，保守，最低误唤醒，只接受完全匹配"
+        2 -> "0.20，较低，偏重准确性，只接受完全匹配"
+        3 -> "0.12，均衡推荐，允许轻微候选"
+        4 -> "0.08，较高，更容易唤醒"
+        else -> "0.045，高灵敏，误唤醒较多"
     }
 
     private fun playWakeConfirmationTone() {

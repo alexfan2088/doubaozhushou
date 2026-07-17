@@ -32,12 +32,16 @@ class OfflineWakeWordDetector(
     @Volatile private var worker: Thread? = null
 
     @Synchronized
-    fun start(device: AudioDeviceInfo, profile: WakeCalibrationProfile): Boolean {
+    fun start(
+        device: AudioDeviceInfo,
+        profile: WakeCalibrationProfile,
+        keywordSource: WakeWordKeywordSource
+    ): Boolean {
         if (running) return true
         if (!hasPermission()) return false
         running = true
         worker = thread(name = "offline-wake-word", isDaemon = true) {
-            runDetector(device, profile)
+            runDetector(device, profile, keywordSource)
         }
         return true
     }
@@ -67,11 +71,16 @@ class OfflineWakeWordDetector(
         worker = null
     }
 
-    private fun runDetector(device: AudioDeviceInfo, profile: WakeCalibrationProfile) {
+    private fun runDetector(
+        device: AudioDeviceInfo,
+        profile: WakeCalibrationProfile,
+        keywordSource: WakeWordKeywordSource
+    ) {
         var spotter: KeywordSpotter? = null
         var detected = false
+        var detectedKeyword = keywordSource.wakeWord
         try {
-            spotter = createSpotter(profile.keywordThreshold)
+            spotter = createSpotter(profile.keywordThreshold, keywordSource)
             val stream = spotter.createStream()
             val recorder = createRecorder(device)
             val buffer = ShortArray(SAMPLE_RATE / 10)
@@ -137,6 +146,7 @@ class OfflineWakeWordDetector(
                                 distance <= profile.templateThreshold
                             ) {
                                 detected = true
+                                detectedKeyword = keywordSource.wakeWord
                                 running = false
                             }
                             personalizedSamples.clear()
@@ -157,8 +167,15 @@ class OfflineWakeWordDetector(
                     if (result.isNotBlank()) {
                         Log.i(TAG, "KWS candidate detected: $result")
                     }
-                    if (WakeKeywordPolicy.accepts(result, profile.keywordThreshold)) {
+                    if (
+                        WakeKeywordPolicy.accepts(
+                            result,
+                            profile.keywordThreshold,
+                            keywordSource.wakeWord
+                        )
+                    ) {
                         detected = true
+                        detectedKeyword = result
                         running = false
                         break
                     }
@@ -173,7 +190,7 @@ class OfflineWakeWordDetector(
             spotter?.release()
             running = false
             worker = null
-            if (detected) onDetected(WAKE_WORD)
+            if (detected) onDetected(detectedKeyword)
         }
     }
 
@@ -281,26 +298,39 @@ class OfflineWakeWordDetector(
         }
     }
 
-    private fun createSpotter(threshold: Float): KeywordSpotter =
-        KeywordSpotter(
-            application.assets,
-            KeywordSpotterConfig(
-                featConfig = FeatureConfig(sampleRate = SAMPLE_RATE, featureDim = 80),
-                modelConfig = OnlineModelConfig(
-                    transducer = OnlineTransducerModelConfig(
-                        encoder = "$MODEL_DIR/encoder.int8.onnx",
-                        decoder = "$MODEL_DIR/decoder.onnx",
-                        joiner = "$MODEL_DIR/joiner.int8.onnx"
-                    ),
-                    tokens = "$MODEL_DIR/tokens.txt",
-                    numThreads = 2
+    private fun createSpotter(
+        threshold: Float,
+        keywordSource: WakeWordKeywordSource
+    ): KeywordSpotter {
+        val modelDir = keywordSource.modelDir
+        val assetManager = if (keywordSource.useAssets) application.assets else null
+        return KeywordSpotter(
+            assetManager,
+            keywordSpotterConfig(threshold, modelDir, keywordSource.keywordsFile)
+        )
+    }
+
+    private fun keywordSpotterConfig(
+        threshold: Float,
+        modelDir: String,
+        keywordsFile: String
+    ): KeywordSpotterConfig =
+        KeywordSpotterConfig(
+            featConfig = FeatureConfig(sampleRate = SAMPLE_RATE, featureDim = 80),
+            modelConfig = OnlineModelConfig(
+                transducer = OnlineTransducerModelConfig(
+                    encoder = "$modelDir/encoder.int8.onnx",
+                    decoder = "$modelDir/decoder.onnx",
+                    joiner = "$modelDir/joiner.int8.onnx"
                 ),
-                maxActivePaths = 4,
-                keywordsFile = "$MODEL_DIR/keywords.txt",
-                keywordsScore = KEYWORD_SCORE,
-                keywordsThreshold = threshold,
-                numTrailingBlanks = 1
-            )
+                tokens = "$modelDir/tokens.txt",
+                numThreads = 2
+            ),
+            maxActivePaths = 4,
+            keywordsFile = keywordsFile,
+            keywordsScore = KEYWORD_SCORE,
+            keywordsThreshold = threshold,
+            numTrailingBlanks = 1
         )
 
     private fun createRecorder(device: AudioDeviceInfo): AudioRecord {
@@ -370,7 +400,6 @@ class OfflineWakeWordDetector(
         private const val TAG = "OfflineWakeWord"
         private const val SAMPLE_RATE = 16_000
         private const val MODEL_DIR = "kws-zh-en"
-        private const val WAKE_WORD = WakeKeywordPolicy.EXACT_KEYWORD
         private const val KEYWORD_SCORE = 3.0f
         private const val LEVEL_LOG_INTERVAL_MS = 2_000L
         private const val ROUTE_SETTLE_MS = 350L

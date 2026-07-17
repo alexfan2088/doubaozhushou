@@ -91,6 +91,7 @@ dependencies {
     implementation("com.bytedance.speechengine:speechengine_tob:0.0.14.6.1-bugfix")
     implementation("com.squareup.okhttp3:okhttp:4.9.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    implementation("com.belerweb:pinyin4j:2.5.1")
     implementation(files("libs/sherpa-onnx-1.13.3.aar"))
     implementation(files("libs/llama-android-v3.aar"))
     testImplementation("junit:junit:4.13.2")
