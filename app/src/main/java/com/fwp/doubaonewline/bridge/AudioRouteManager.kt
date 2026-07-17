@@ -47,6 +47,7 @@ class AudioRouteManager(
     @Volatile
     private var a2dpProxy: BluetoothA2dp? = null
     private var previousUsbReady: Boolean? = null
+    private var activeCommunicationSignature: String? = null
 
     init {
         requestProfileProxy(BluetoothProfile.HEADSET) { headsetProxy = it as? BluetoothHeadset }
@@ -193,6 +194,7 @@ class AudioRouteManager(
     fun clear() {
         runCatching { audioManager.clearCommunicationDevice() }
         releaseBluetoothCommunication()
+        activeCommunicationSignature = null
         if (audioManager.mode == AudioManager.MODE_IN_COMMUNICATION) {
             audioManager.mode = AudioManager.MODE_NORMAL
         }
@@ -200,6 +202,7 @@ class AudioRouteManager(
 
     private fun releaseBluetoothCommunication() {
         runCatching { audioManager.clearCommunicationDevice() }
+        activeCommunicationSignature = null
         runCatching {
             @Suppress("DEPRECATION")
             audioManager.isBluetoothScoOn = false
@@ -216,14 +219,28 @@ class AudioRouteManager(
         kind: Kind,
         fallbackLabel: String
     ): Selection {
-        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-        val accepted = device != null && runCatching {
-            audioManager.setCommunicationDevice(device)
-        }.getOrDefault(false)
+        if (audioManager.mode != AudioManager.MODE_IN_COMMUNICATION) {
+            audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+        }
+        val signature = device?.communicationSignature()
+        val alreadyActive = device != null &&
+            signature == activeCommunicationSignature &&
+            runCatching {
+                audioManager.communicationDevice?.communicationSignature() == signature
+            }.getOrDefault(false)
+        val accepted = when {
+            device == null -> false
+            alreadyActive -> true
+            else -> runCatching {
+                audioManager.setCommunicationDevice(device)
+            }.getOrDefault(false).also {
+                if (it) activeCommunicationSignature = signature
+            }
+        }
         if (kind == Kind.BLUETOOTH && accepted) {
             runCatching {
                 @Suppress("DEPRECATION")
-                audioManager.startBluetoothSco()
+                if (!audioManager.isBluetoothScoOn) audioManager.startBluetoothSco()
                 @Suppress("DEPRECATION")
                 audioManager.isBluetoothScoOn = true
             }
@@ -246,6 +263,9 @@ class AudioRouteManager(
     private fun isBluetoothCommunication(device: AudioDeviceInfo): Boolean =
         device.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO ||
             device.type == AudioDeviceInfo.TYPE_BLE_HEADSET
+
+    private fun AudioDeviceInfo.communicationSignature(): String =
+        "${type}|${address}|${productName}"
 
     private fun pairedBluetoothDevices(): Set<BluetoothDevice> =
         runCatching { bluetoothManager.adapter?.bondedDevices.orEmpty() }

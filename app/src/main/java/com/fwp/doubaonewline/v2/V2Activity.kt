@@ -26,11 +26,12 @@ import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
+import android.util.Log
+import android.view.View
 import android.view.Gravity
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.LinearLayout
-import android.widget.SeekBar
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
@@ -59,15 +60,15 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     private lateinit var selectedBluetoothText: TextView
     private lateinit var localWakeCheck: CheckBox
     private lateinit var lastWakeText: TextView
-    private lateinit var wakeSensitivityText: TextView
-    private lateinit var wakeSensitivitySeek: SeekBar
+    private lateinit var installWakeModelButton: Button
 
     private lateinit var client: VolcengineRealtimeVoiceClient
     private lateinit var coordinator: V2SessionCoordinator
     private lateinit var usageTracker: V2UsageTracker
     private lateinit var audioMonitor: AudioDeviceMonitor
     private lateinit var audioRouteManager: AudioRouteManager
-    private lateinit var wakeWordDetector: OfflineWakeWordDetector
+    private lateinit var wakeWordDetector: V2AsrWakeWordDetector
+    private lateinit var wakeAsrModelManager: V2WakeAsrModelManager
     private lateinit var tokenSavingSettings: V2TokenSavingSettings
     private lateinit var localWelcomeSpeaker: V2LocalWelcomeSpeaker
     private var tokenSavingConfig = V2TokenSavingConfig()
@@ -243,8 +244,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         selectedBluetoothText = findViewById(R.id.v2SelectedBluetoothText)
         localWakeCheck = findViewById(R.id.v2LocalWakeCheck)
         lastWakeText = findViewById(R.id.v2LastWakeText)
-        wakeSensitivityText = findViewById(R.id.v2WakeSensitivityText)
-        wakeSensitivitySeek = findViewById(R.id.v2WakeSensitivitySeek)
+        installWakeModelButton = findViewById(R.id.v2InstallWakeModelButton)
 
         VersionRouter.saveSelectedMode(this, BridgeContract.MODE_V2)
         VersionSessionIsolation.enterV2(this)
@@ -254,11 +254,12 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         usageTracker = V2UsageTracker(this)
         tokenSavingSettings = V2TokenSavingSettings(this)
         tokenSavingConfig = tokenSavingSettings.load()
+        wakeAsrModelManager = V2WakeAsrModelManager(this)
         localWelcomeSpeaker = V2LocalWelcomeSpeaker(this)
         audioRouteManager = AudioRouteManager(this)
-        wakeWordDetector = OfflineWakeWordDetector(
+        wakeWordDetector = V2AsrWakeWordDetector(
             this,
-            onDetected = { detectedKeyword ->
+            onDetected = { detection ->
                 runOnUiThread {
                     if (
                         localWakeCheck.isChecked &&
@@ -269,14 +270,26 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
                         wakeCooldownElapsed()
                     ) {
                         lastWakeAcceptedAtMs = SystemClock.elapsedRealtime()
-                        val sensitivity = currentWakeSensitivity()
-                        renderLastWake(detectedKeyword, sensitivity)
+                        renderWakeDetection(detection)
                         statusText.text = "已听到${tokenSavingConfig.wakeWordText}"
                         detailText.text = "正在准备云端语音模型…"
                         startSession(
                             resetSession = false,
                             playWelcome = true
                         )
+                    }
+                }
+            },
+            onRejected = { detection ->
+                runOnUiThread {
+                    if (
+                        localWakeCheck.isChecked &&
+                        !manuallyPaused &&
+                        activeRouteKey != null &&
+                        !localWelcomeInProgress &&
+                        !cloudSessionActive
+                    ) {
+                        renderWakeDetection(detection)
                     }
                 }
             },
@@ -290,52 +303,11 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         renderUsage(usageTracker.snapshot())
         renderSessionTokens()
         updateSelectedBluetoothText()
+        renderWakeModelInstallState()
         val voicePrefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         localWakeCheck.isChecked = voicePrefs
             .getBoolean(KEY_LOCAL_WAKE_ENABLED, false)
         renderLocalWakeLabel()
-        val initialSensitivity = voicePrefs
-            .getInt(KEY_WAKE_SENSITIVITY, DEFAULT_WAKE_SENSITIVITY)
-            .coerceIn(MIN_WAKE_SENSITIVITY, MAX_WAKE_SENSITIVITY)
-        wakeSensitivitySeek.progress = initialSensitivity
-        renderWakeSensitivity(initialSensitivity)
-        wakeSensitivitySeek.setOnSeekBarChangeListener(
-            object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(
-                    seekBar: SeekBar?,
-                    progress: Int,
-                    fromUser: Boolean
-                ) {
-                    val sensitivity = progress.coerceIn(
-                        MIN_WAKE_SENSITIVITY,
-                        MAX_WAKE_SENSITIVITY
-                    )
-                    renderWakeSensitivity(sensitivity)
-                    if (fromUser) {
-                        voicePrefs.edit()
-                            .putInt(KEY_WAKE_SENSITIVITY, sensitivity)
-                            .apply()
-                    }
-                }
-
-                override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
-
-                override fun onStopTrackingTouch(seekBar: SeekBar?) {
-                    if (
-                        localWakeCheck.isChecked &&
-                        !cloudSessionActive &&
-                        !manuallyPaused &&
-                        activeRouteKey != null
-                    ) {
-                        wakeWordDetector.stop()
-                        handler.postDelayed(
-                            { startLocalWakeListening() },
-                            AUDIO_HANDOFF_DELAY_MS
-                        )
-                    }
-                }
-            }
-        )
         localWakeCheck.setOnCheckedChangeListener { _, checked ->
             voicePrefs.edit()
                 .putBoolean(KEY_LOCAL_WAKE_ENABLED, checked)
@@ -361,6 +333,9 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         }
         findViewById<Button>(R.id.v2TokenSettingsButton).setOnClickListener {
             startActivity(Intent(this, V2TokenSavingSettingsActivity::class.java))
+        }
+        installWakeModelButton.setOnClickListener {
+            startWakeModelDownload()
         }
         stopButton.setOnClickListener {
             if (manuallyPaused) resumeSession() else pauseSession()
@@ -390,7 +365,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         if (::tokenSavingSettings.isInitialized) {
             tokenSavingConfig = tokenSavingSettings.load()
             renderLocalWakeLabel()
-            renderWakeSensitivity(currentWakeSensitivity())
+            renderWakeModelInstallState()
             if (cloudSessionActive) scheduleLocalWakeStandby()
             if (
                 localWakeCheck.isChecked &&
@@ -529,67 +504,104 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
     }
 
     private fun startLocalWakeListening() {
+        Log.i(
+            TAG,
+            "startLocalWakeListening checked=${localWakeCheck.isChecked} " +
+                "cloud=$cloudSessionActive paused=$manuallyPaused route=$activeRouteKey " +
+                "welcome=$localWelcomeInProgress input=${activeWakeInput?.productName}"
+        )
         val input = activeWakeInput ?: run {
+            Log.w(TAG, "local wake unavailable: no active input")
             showError("本地唤醒不可用", "没有找到可用麦克风。")
             return
         }
-        val keywordSource = WakeWordKeywordBuilder.createKeywordSource(
-            this,
-            tokenSavingConfig.wakeWordText
-        )
-        if (keywordSource.usingFallback) {
-            tokenSavingConfig = tokenSavingConfig.copy(
-                wakeWordText = V2TokenSavingConfig.DEFAULT_WAKE_WORD
+        val files = wakeAsrModelManager.installedFiles() ?: run {
+            Log.w(TAG, "local wake unavailable: ASR model missing")
+            renderWakeModelInstallState()
+            showError(
+                "本地唤醒不可用",
+                "缺少免费本地语音识别模型。请点击“安装本地唤醒模型”。"
             )
-            renderLocalWakeLabel()
+            return
         }
-        if (!wakeWordDetector.start(input, currentWakeProfile(), keywordSource)) {
-            showError("本地唤醒不可用", "缺少麦克风权限。")
+        if (
+            !wakeWordDetector.start(
+                input,
+                files,
+                tokenSavingConfig.wakeWordText
+            )
+        ) {
+            Log.w(TAG, "local wake start deferred; detector is still stopping or permission is missing")
+            lastWakeText.text = "本地唤醒：正在切换麦克风，请稍候"
+            handler.postDelayed({ startLocalWakeListening() }, AUDIO_HANDOFF_DELAY_MS)
         }
     }
 
-    private fun currentWakeProfile(): WakeCalibrationProfile {
-        return WakeCalibrationStore.DEFAULT_PROFILE.copy(
-            keywordThreshold = thresholdForSensitivity(currentWakeSensitivity())
-        )
+    private fun renderWakeModelInstallState() {
+        if (!::installWakeModelButton.isInitialized || !::wakeAsrModelManager.isInitialized) {
+            return
+        }
+        val installed = wakeAsrModelManager.isInstalled()
+        installWakeModelButton.visibility = if (installed) View.GONE else View.VISIBLE
+        if (!installed) {
+            lastWakeText.text = "最近唤醒：暂无 · 需要先安装本地唤醒模型"
+        }
     }
 
-    private fun renderWakeSensitivity(sensitivity: Int) {
-        wakeSensitivityText.text =
-            "唤醒灵敏度：$sensitivity · ${wakeThresholdStandard(sensitivity)}"
+    private fun startWakeModelDownload() {
+        installWakeModelButton.isEnabled = false
+        installWakeModelButton.text = "正在下载模型..."
+        lastWakeText.text = "本地唤醒模型：准备下载"
+        wakeAsrModelManager.download { state ->
+            runOnUiThread {
+                when (state) {
+                    is V2WakeAsrModelManager.State.Downloading -> {
+                        installWakeModelButton.visibility = View.VISIBLE
+                        installWakeModelButton.isEnabled = false
+                        installWakeModelButton.text = "下载中 ${state.percent}%"
+                        lastWakeText.text = "本地唤醒模型：正在下载${state.label} ${state.percent}%"
+                    }
+                    is V2WakeAsrModelManager.State.Verifying -> {
+                        installWakeModelButton.text = "正在校验"
+                        lastWakeText.text = "本地唤醒模型：正在校验${state.label}"
+                    }
+                    V2WakeAsrModelManager.State.Ready -> {
+                        installWakeModelButton.visibility = View.GONE
+                        installWakeModelButton.isEnabled = true
+                        installWakeModelButton.text = "安装本地唤醒模型"
+                        lastWakeText.text = "最近唤醒：暂无 · 本地唤醒模型已就绪"
+                        if (
+                            localWakeCheck.isChecked &&
+                            !cloudSessionActive &&
+                            !manuallyPaused &&
+                            activeRouteKey != null
+                        ) {
+                            handler.postDelayed({ startLocalWakeListening() }, AUDIO_HANDOFF_DELAY_MS)
+                        }
+                    }
+                    is V2WakeAsrModelManager.State.Failed -> {
+                        installWakeModelButton.visibility = View.VISIBLE
+                        installWakeModelButton.isEnabled = true
+                        installWakeModelButton.text = "重新安装本地唤醒模型"
+                        lastWakeText.text = "本地唤醒模型：${state.message}"
+                    }
+                }
+            }
+        }
     }
 
     private fun renderLocalWakeLabel() {
         localWakeCheck.text = "本地唤醒（${tokenSavingConfig.wakeWordText}）"
     }
 
-    private fun renderLastWake(detectedKeyword: String, sensitivity: Int) {
+    private fun renderWakeDetection(detection: V2WakeDetection) {
         val time = SimpleDateFormat("HH:mm:ss", Locale.CHINA).format(Date())
+        val state = if (detection.match.matched) "通过" else "拒绝"
         lastWakeText.text =
-            "最近唤醒：$time · 识别：$detectedKeyword · 阈值：$sensitivity（" +
-            "${wakeThresholdStandard(sensitivity)}）"
-    }
-
-    private fun currentWakeSensitivity(): Int =
-        wakeSensitivitySeek.progress.coerceIn(
-            MIN_WAKE_SENSITIVITY,
-            MAX_WAKE_SENSITIVITY
-        )
-
-    private fun thresholdForSensitivity(sensitivity: Int): Float = when (sensitivity) {
-        1 -> 0.28f
-        2 -> 0.20f
-        3 -> 0.12f
-        4 -> 0.08f
-        else -> 0.045f
-    }
-
-    private fun wakeThresholdStandard(sensitivity: Int): String = when (sensitivity) {
-        1 -> "0.28，保守，最低误唤醒，只接受完全匹配"
-        2 -> "0.20，较低，偏重准确性，只接受完全匹配"
-        3 -> "0.12，均衡推荐，允许轻微候选"
-        4 -> "0.08，较高，更容易唤醒"
-        else -> "0.045，高灵敏，误唤醒较多"
+            "最近唤醒：$time · $state · 识别：${detection.recognizedText.ifBlank { "空" }} · " +
+            "拼音：${detection.match.textPinyin.ifBlank { "空" }} · " +
+            "相似度：${detection.match.similarityPercent}% · " +
+            "标准：${detection.match.reason}"
     }
 
     private fun playWakeConfirmationTone() {
@@ -753,6 +765,12 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         val snapshot = audioMonitor.snapshot()
         val selection = audioRouteManager.select(snapshot)
         activeWakeInput = selectWakeInput(selection.kind, selection.routeAccepted)
+        Log.i(
+            TAG,
+            "route kind=${selection.kind} label=${selection.label} accepted=${selection.routeAccepted} " +
+                "input=${activeWakeInput?.productName} inputType=${activeWakeInput?.type} " +
+                "activeRoute=$activeRouteKey cloud=$cloudSessionActive"
+        )
         activeConnectionDetail = when (selection.kind) {
             AudioRouteManager.Kind.USB ->
                 if (selection.routeAccepted) {
@@ -784,6 +802,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         }
 
         if (routeKey == null) {
+            Log.i(TAG, "route unavailable; stopping V2 session and local wake")
             handler.removeCallbacks(reconnectSession)
             handler.removeCallbacks(enterLocalWakeStandby)
             handler.removeCallbacks(responseTimeout)
@@ -802,6 +821,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         }
 
         if (routeKey != activeRouteKey) {
+            Log.i(TAG, "route changed from=$activeRouteKey to=$routeKey")
             handler.removeCallbacks(enterLocalWakeStandby)
             handler.removeCallbacks(responseTimeout)
             cancelPendingLocalWelcome()
@@ -1186,6 +1206,9 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         if (::wakeWordDetector.isInitialized) {
             wakeWordDetector.stop()
         }
+        if (::wakeAsrModelManager.isInitialized) {
+            wakeAsrModelManager.close()
+        }
         V2VoiceForegroundService.stop(this)
         if (connectionReceiverRegistered) {
             unregisterReceiver(connectionReceiver)
@@ -1220,10 +1243,7 @@ class V2Activity : AppCompatActivity(), RealtimeVoiceListener {
         private const val LOCAL_WAKE_STANDBY_PROMPT = "我先休息了，有事叫我"
         private const val CONTEXT_RECONNECT_DELAY_MS = 500L
         private const val KEY_LOCAL_WAKE_ENABLED = "local_wake_enabled"
-        private const val KEY_WAKE_SENSITIVITY = "wake_sensitivity"
-        private const val DEFAULT_WAKE_SENSITIVITY = 3
-        private const val MIN_WAKE_SENSITIVITY = 1
-        private const val MAX_WAKE_SENSITIVITY = 5
+        private const val TAG = "V2Activity"
         private const val INPUT_TEXT_PRICE = 0.000010
         private const val INPUT_AUDIO_PRICE = 0.000080
         private const val OUTPUT_TEXT_PRICE = 0.000080

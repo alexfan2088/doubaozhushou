@@ -149,8 +149,8 @@ class V2TokenSavingSettingsActivity : AppCompatActivity() {
     }
 
     private fun save() {
-        val wakeWord = WakeWordKeywordBuilder.normalize(wakeWordText.text.toString())
-        if (!WakeWordKeywordBuilder.isSupportedWakeWord(wakeWord)) {
+        val wakeWord = WakeWordTextMatcher.normalizeWakeWord(wakeWordText.text.toString())
+        if (!WakeWordTextMatcher.isSupportedWakeWord(wakeWord)) {
             Toast.makeText(this, "唤醒词只支持 2-8 个中文汉字", Toast.LENGTH_SHORT).show()
             return
         }
