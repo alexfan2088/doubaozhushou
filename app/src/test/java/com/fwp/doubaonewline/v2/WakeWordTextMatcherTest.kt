@@ -29,12 +29,20 @@ class WakeWordTextMatcherTest {
     fun pinyinSimilarityAllowsObservedBluetoothAsrErrors() {
         assertTrue(WakeWordTextMatcher.matches("宝宝八八", "doubaodoubao").matched)
         assertTrue(WakeWordTextMatcher.matches("得到吧走", "doubaodoubao").matched)
+        assertTrue(WakeWordTextMatcher.matches("走吧走", "doubaodoubao").matched)
+        assertTrue(WakeWordTextMatcher.matches("走吧走吧", "doubaodoubao").matched)
+        assertTrue(WakeWordTextMatcher.matches("怎吧走吧", "doubaodoubao").matched)
+        assertTrue(WakeWordTextMatcher.matches("怎吧吧走", "doubaodoubao").matched)
     }
 
     @Test
     fun unrelatedTextIsRejected() {
         assertFalse(WakeWordTextMatcher.matches("天气很好", "豆包豆包").matched)
         assertFalse(WakeWordTextMatcher.matches("怎他么怎", "doubaodoubao").matched)
+        assertFalse(WakeWordTextMatcher.matches("怎么怎", "doubaodoubao").matched)
+        assertFalse(WakeWordTextMatcher.matches("i 慕希", "doubaodoubao").matched)
+        assertFalse(WakeWordTextMatcher.matches("杂物桶", "doubaodoubao").matched)
+        assertFalse(WakeWordTextMatcher.matches("电视机", "doubaodoubao").matched)
         assertFalse(WakeWordTextMatcher.matches("天气很好", "doubaodoubao").matched)
     }
 

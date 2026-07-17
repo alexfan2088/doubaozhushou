@@ -19,7 +19,7 @@ data class WakeMatchResult(
 
 object WakeWordTextMatcher {
     private val supportedWakeWordRegex = Regex("^[\\u4e00-\\u9fa5]{2,8}$")
-    private val fillerWords = listOf("请", "帮我", "那个", "一下", "啊", "呀", "呢", "吧", "喂")
+    private val fillerWords = listOf("请", "帮我", "那个", "一下", "啊", "呀", "呢", "喂")
     private val punctuationRegex = Regex("[\\s\\p{Punct}，。！？、；：“”‘’（）【】《》]+")
     private val pinyinFormat = HanyuPinyinOutputFormat().apply {
         caseType = HanyuPinyinCaseType.LOWERCASE

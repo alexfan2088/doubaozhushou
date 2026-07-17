@@ -44,13 +44,12 @@ class AutoStartMonitorService : Service() {
         audioMonitor = AudioDeviceMonitor(this) { scheduleInspections() }
         registerConnectionReceiver()
         audioMonitor.start()
+        scheduleInspections()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i(TAG, "onStartCommand action=${intent?.action}")
-        if (intent?.action == BridgeContract.ACTION_MONITOR_TRIGGER) {
-            scheduleInspections()
-        }
+        scheduleInspections()
         return START_STICKY
     }
 

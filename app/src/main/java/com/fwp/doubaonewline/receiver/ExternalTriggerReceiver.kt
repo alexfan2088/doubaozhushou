@@ -17,6 +17,7 @@ class ExternalTriggerReceiver : BroadcastReceiver() {
 
         runCatching { AutoStartMonitorService.start(context, trigger = true) }
             .onFailure { Log.w(TAG, "Unable to start monitor from $action", it) }
+        AutoStartRetryJobService.schedule(context)
     }
 
     companion object {
